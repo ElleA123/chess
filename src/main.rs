@@ -1,40 +1,44 @@
-use std::collections::VecDeque;
 use std::time::Instant;
 
-#[derive(Debug)]
-enum Error {
-    ParsePieceError,
-    ParseFenError,
-    CoordError,
+const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+const N_STEPS: [(isize, isize); 8] = [(2, 1), (2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2), (-2, 1), (-2, -1)];
+const B_STEPS: [(isize, isize); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
+const KQ_STEPS: [(isize, isize); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
+
+const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
+
+enum ParseFenError {
+    BoardError,
+
 }
 
 type Coord = (usize, usize);
 
-fn coord_from_str(san: &str) -> Result<Coord, Error> {
+fn coord_from_str(san: &str) -> Option<Coord> {
     let mut chars = san.chars();
     let x = match chars.next() {
         Some(c) => (c as usize) - ('a' as usize),
-        None => { return Err(Error::CoordError) }
+        None => { return None; }
     };
 
-    let Some(y) = chars.next() else { return Err(Error::CoordError); };
+    let Some(y) = chars.next() else { return None; };
     let y = match y.to_digit(10) {
         Some(i) => 8 - i as usize,
-        None => return Err(Error::CoordError)
+        None => return None
     };
 
     if Board::is_on_board(y, x) {
-        Ok((y, x))
+        Some((y, x))
     } else {
-        Err(Error::CoordError)
+        None
     }
 }
-fn coord_to_string(coord: Coord) -> Result<String, Error> {
+fn coord_to_string(coord: Coord) -> Option<String> {
     let (y, x) = coord;
     if Board::is_on_board(y, x) {
-        Ok(format!("{}{}", (x as u8 + 'a' as u8) as char, 8 - y))
+        Some(format!("{}{}", (x as u8 + 'a' as u8) as char, 8 - y))
     } else {
-        Err(Error::CoordError)
+        None
     }
 }
 
@@ -52,19 +56,19 @@ enum PieceType {
 }
 
 impl PieceType {
-    pub fn from_char(c: char) -> Result<Self, Error> {
+    fn from_char(c: char) -> Option<Self> {
         match c.to_ascii_lowercase() {
-            'r' => Ok(PieceType::Rook),
-            'n' => Ok(PieceType::Knight),
-            'b' => Ok(PieceType::Bishop),
-            'q' => Ok(PieceType::Queen),
-            'k' => Ok(PieceType::King),
-            'p' => Ok(PieceType::Pawn),
-            _ => Err(Error::ParsePieceError)
+            'r' => Some(PieceType::Rook),
+            'n' => Some(PieceType::Knight),
+            'b' => Some(PieceType::Bishop),
+            'q' => Some(PieceType::Queen),
+            'k' => Some(PieceType::King),
+            'p' => Some(PieceType::Pawn),
+            _ => None
         }
     }
 
-    pub fn to_string(&self) -> String {
+    fn to_string(&self) -> String {
         format!("{}", match self {
             &PieceType::Rook => 'r',
             &PieceType::Knight => 'n',
@@ -83,18 +87,18 @@ struct Piece {
 }
 
 impl Piece {
-    pub fn from_char(c: char) -> Result<Self, Error> {
-        if let Ok(piece_type) = PieceType::from_char(c) {
-            Ok(Piece {
+    fn from_char(c: char) -> Option<Self> {
+        if let Some(piece_type) = PieceType::from_char(c) {
+            Some(Piece {
                 piece_type,
                 is_white: c.is_ascii_uppercase()
             })
         } else {
-            Err(Error::ParsePieceError)
+            None
         }
     }
 
-    pub fn to_string(&self) -> String {
+    fn to_string(&self) -> String {
         if self.is_white {
             self.piece_type.to_string().to_ascii_uppercase()
         } else {
@@ -104,12 +108,19 @@ impl Piece {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+enum Castle {
+    Kingside,
+    Queenside
+}
+
+#[derive(Debug, PartialEq, Clone)]
 struct Move {
     from: Coord,
     to: Coord,
-    extra_move: Option<(Coord, Coord)>, // also for castling
-    extra_capture: Option<Coord>, // for en passant
-    new_en_passant: Option<Coord>,
+    // is_attack: bool,
+    en_passant: bool,
+    new_en_passant: bool,
+    castle_dir: Option<Castle>, // also for castling
     promotes_to: Option<PieceType>,
 }
 
@@ -118,25 +129,26 @@ impl Move {
         Move {
             from,
             to,
-            extra_move: None,
-            extra_capture: None,
-            new_en_passant: None,
+            en_passant: false,
+            new_en_passant: false,
+            castle_dir: None,
             promotes_to: None
         }
     }
 
-    fn to_uci(&self) -> String {
+    fn uci(&self) -> String {
         format!("{}{}",
             coord_to_string(self.from).unwrap(),
             coord_to_string(self.to).unwrap()
         )
     }
 
-    fn to_san(&self, board: &Board) -> String {
+    fn san(&self, board: &Board) -> String {
+        // Todo: fix specifying coordinates
         let (f, t) = (self.from, self.to);
 
         let p = board.board[f.0][f.1].unwrap();
-        let mut piece = match p.piece_type {
+        let piece = match p.piece_type {
             PieceType::Pawn => String::from((f.1 as u8 + 'a' as u8) as char),
             p => p.to_string().to_ascii_uppercase()
         };
@@ -176,6 +188,10 @@ struct Board {
     side_to_move: bool,
     allowed_castling: (bool, bool, bool, bool), // KQkq
     en_passant: Option<Coord>,
+    halfmove_count: usize,
+    fullmove_num: usize,
+    // pieces: Option<Vec<Coord>>,
+    // legal_moves: Option<Vec<Move>>,
 }
 
 impl std::fmt::Display for Board {
@@ -192,27 +208,27 @@ impl std::fmt::Display for Board {
 }
 
 impl Board {
-    pub fn is_on_board(y: usize, x: usize) -> bool {
+    fn is_on_board(y: usize, x: usize) -> bool {
         y < 8 &&  x < 8 // type limits cover the bottom half
     }
 
-    fn from_fen(fen: String) -> Result<Self, Error> {
+    fn from_fen(fen: &str) -> Option<Self> {
         let mut fen_fields = fen.split(" ");
 
         // Position
-        let Some(pieces) = fen_fields.next() else { return Err(Error::ParseFenError) };
+        let Some(pieces) = fen_fields.next() else { return None; };
         let mut board: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
 
         // TODO: check for repeated numbers (e.g. "44") in fen
         let mut y = 0;
         for rank in pieces.split("/") {
-            if y >= 8 { return Err(Error::ParseFenError); }
+            if y >= 8 { return None; }
 
             let mut x = 0;
             for p in rank.chars() {
-                if x >= 8 { return Err(Error::ParseFenError); }
+                if x >= 8 { return None; }
 
-                if let Ok(piece) = Piece::from_char(p) {
+                if let Some(piece) = Piece::from_char(p) {
                     board[y][x] = Some(piece);
                     x += 1;
                 }
@@ -220,24 +236,24 @@ impl Board {
                     x += p.to_digit(10).unwrap() as usize;
                 }
                 else {
-                    return Err(Error::ParseFenError);
+                    return None;
                 }
             }
-            if x != 8 { return Err(Error::ParseFenError); }
+            if x != 8 { return None; }
             y += 1;
         }
-        if y != 8 { return Err(Error::ParseFenError); }
+        if y != 8 { return None; }
 
         // Player to move
-        let Some(side_to_move) = fen_fields.next() else { return Err(Error::ParseFenError) };
+        let Some(side_to_move) = fen_fields.next() else { return None; };
         let side_to_move = match side_to_move {
             "w" => WHITE,
             "b" => BLACK,
-            _ => return Err(Error::ParseFenError)
+            _ => return None
         };
 
         // Castling avilability - TODO: add error handling
-        let Some(allowed_castling) = fen_fields.next() else { return Err(Error::ParseFenError) };
+        let Some(allowed_castling) = fen_fields.next() else { return None; };
         let allowed_castling = (
             allowed_castling.contains("K"),
             allowed_castling.contains("Q"),
@@ -246,30 +262,84 @@ impl Board {
         );
 
         // En passant
-        let Some(en_passant) = fen_fields.next() else { return Err(Error::ParseFenError) };
+        let Some(en_passant) = fen_fields.next() else { return None; };
         let en_passant = match en_passant {
             "-" => None,
             square => match coord_from_str(square) {
-                Ok(c) => Some(c),
-                Err(_) => { return Err(Error::ParseFenError); }
+                Some(c) => Some(c),
+                None => { return None; }
             }
         };
 
-        // Halfmove count and fullmove count aren't stored
-        // if fen_fields.count() == 2 {
-        Ok(Board {
-            board,
-            side_to_move,
-            allowed_castling,
-            en_passant,
-        })
-        // } else {
-        //     Err(Error::ParseFenError)
-        // }
+        let Some(halfmove_count) = fen_fields.next() else { return None; };
+        let Ok(halfmove_count) = halfmove_count.parse::<usize>() else { return None; };
+
+        let Some(fullmove_num) = fen_fields.next() else { return None; };
+        let Ok(fullmove_num) = fullmove_num.parse::<usize>() else { return None; };
+
+        if fen_fields.count() == 0 {
+            Some(Board {
+                board,
+                side_to_move,
+                allowed_castling,
+                en_passant,
+                halfmove_count,
+                fullmove_num
+            })
+        } else {
+            None
+        }
     }
 
-    pub fn default() -> Self {
-        Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_owned()).unwrap()
+    fn get_fen(&self) -> String {
+        let board = (0..8).into_iter().map(|y| {
+            let mut row = String::new();
+            let mut gap: u8 = 0;
+            for x in 0..8 {
+                match self.board[y][x] {
+                    Some(p) => {
+                        if gap > 0 {
+                            row += gap.to_string().as_str();
+                            gap = 0;
+                        }
+                        row += p.to_string().as_str();
+                    },
+                    None => gap += 1
+                }
+            }
+            if gap > 0 {
+                row += gap.to_string().as_str();
+            }
+            row
+        }).collect::<Vec<String>>().join("/");
+
+        let side_to_move = if self.side_to_move {"w"} else {"b"};
+
+        let mut castling = format!("{}{}{}{}",
+            if self.allowed_castling.0 {"K"} else {""},
+            if self.allowed_castling.1 {"Q"} else {""},
+            if self.allowed_castling.2 {"k"} else {""},
+            if self.allowed_castling.3 {"q"} else {""},
+        );
+        if castling == "" { castling = "-".to_string(); }
+
+        let en_passant = match self.en_passant {
+            Some(c) => coord_to_string(c).unwrap(),
+            None => "-".to_string()
+        };
+
+        format!("{} {} {} {} {} {}",
+            board,
+            side_to_move,
+            castling,
+            en_passant,
+            self.halfmove_count,
+            self.fullmove_num
+        )
+    }
+
+    fn default() -> Self {
+        Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
     }
 
     fn make_move(&mut self, mv: &Move) {
@@ -277,8 +347,16 @@ impl Board {
         let (from_y, from_x) = mv.from;
         let (to_y, to_x) = mv.to;
 
-        // Make the swap
         let piece = self.board[from_y][from_x].unwrap();
+
+        // Update halfmove count
+        if piece.piece_type == PieceType::Pawn || self.board[to_y][to_x].is_some() {
+            self.halfmove_count = 0;
+        } else {
+            self.halfmove_count += 1;
+        }
+
+        // Make the swap
         self.board[to_y][to_x] = match mv.promotes_to {
             Some(p) => Some(Piece {
                 piece_type: p,
@@ -287,16 +365,20 @@ impl Board {
             None => Some(piece)};
         self.board[from_y][from_x] = None;
 
-        // Extra capture (en passant)
-        if let Some((y, x)) = mv.extra_capture {
-            self.board[y][x] = None;
+        // En passant
+        if mv.en_passant {
+            self.board[from_y][to_x] = None;
         }
 
-        // Extra piece move (castling)
-        if let Some(((f_y, f_x), (t_y, t_x))) = mv.extra_move {
-            let extra_piece = self.board[f_y][f_x].unwrap();
-            self.board[t_y][t_x] = Some(extra_piece);
-            self.board[f_y][f_x] = None;
+        // Castling
+        if let Some(dir) = &mv.castle_dir {
+            let (f_x, t_x) = match dir {
+                Castle::Kingside => (7, 5),
+                Castle::Queenside => (0, 3)
+            };
+            let extra_piece = self.board[from_y][f_x].unwrap();
+            self.board[to_y][t_x] = Some(extra_piece);
+            self.board[from_y][f_x] = None;
         }
 
         // Update castling availability
@@ -317,16 +399,18 @@ impl Board {
         };
 
         // Update en passant square
-        self.en_passant = mv.new_en_passant;
+        self.en_passant = if mv.new_en_passant { Some((to_y, to_x)) } else {None};
+        // Update fullmove num
+        if !self.side_to_move {self.fullmove_num += 1;}
         // Update turn
         self.side_to_move = !self.side_to_move;
     }
 
-    fn make_moves(&mut self, moves: &Vec<Move>) {
-        for mv in moves {
-            self.make_move(mv);
-        }
-    }
+    // fn make_moves(&mut self, moves: &Vec<Move>) {
+    //     for mv in moves {
+    //         self.make_move(mv);
+    //     }
+    // }
 
     fn square_is_color(&self, y: usize, x: usize, color: bool) -> bool {
         match self.board[y][x] {
@@ -350,25 +434,18 @@ impl Board {
         }).collect()
     }
 
-    fn get_linear_moves(&self, y: usize, x: usize, step_list: Vec<(i32, i32)>, one_step_only: bool) -> Vec<Move> {
+    fn get_linear_moves(&self, y: usize, x: usize, step_list: &[(isize, isize)], one_step_only: bool) -> Vec<Move> {
         let color = self.board[y][x].unwrap().is_white;
         let mut moves = Vec::new();
         for (step_y, step_x) in step_list {
-            let mut test_y = (y as i32 + step_y) as usize;
-            let mut test_x = (x as i32 + step_x) as usize;
+            let mut test_y = (y as isize + step_y) as usize;
+            let mut test_x = (x as isize + step_x) as usize;
             while Board::is_on_board(test_y, test_x) {
                 // Empty: add move and continue
                 // Opposite color: add move and stop
                 // Same color: stop w/o adding move
                 if !self.square_is_color(test_y, test_x, color) {
-                    moves.push(Move {
-                        from: (y, x),
-                        to: (test_y, test_x),
-                        extra_move: None,
-                        extra_capture: None,
-                        new_en_passant: None,
-                        promotes_to: None,
-                    });
+                    moves.push(Move::basic((y, x), (test_y, test_x)));
                     if self.square_is_color(test_y, test_x, !color) {
                         break;
                     }
@@ -376,8 +453,8 @@ impl Board {
                     break;
                 }
                 
-                test_y = (test_y as i32 + step_y) as usize;
-                test_x = (test_x as i32 + step_x) as usize;
+                test_y = (test_y as isize + step_y) as usize;
+                test_x = (test_x as isize + step_x) as usize;
 
                 if one_step_only {
                     break;
@@ -388,20 +465,16 @@ impl Board {
     }
 
     fn get_rook_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(y, x, vec![(1, 0), (-1, 0), (0, 1), (0, -1)], false)
+        self.get_linear_moves(y, x, &R_STEPS, false)
     }
     fn get_knight_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(
-            y, x, vec![(2, 1), (2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2), (-2, 1), (-2, -1)], true
-        )
+        self.get_linear_moves(y, x, &N_STEPS, true)
     }
     fn get_bishop_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(y, x, vec![(1, 1), (1, -1), (-1, 1), (-1, -1)], false)
+        self.get_linear_moves(y, x, &B_STEPS, false)
     }
     fn get_queen_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(
-            y, x, vec![(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)], false
-        )
+        self.get_linear_moves(y, x, &KQ_STEPS, false)
     }
     fn castling_is_ok(&self, castle: usize, squares_attacked: &Vec<Coord>) -> bool {
         let (right, empty, not_attacked) = match castle {
@@ -419,24 +492,23 @@ impl Board {
         let color = self.board[y][x].unwrap().is_white;
 
         let squares_attacked: Vec<Coord> = if check_not_attacked {
-            self.get_all_attacks(!color).into_iter()
+            self.get_attacks(!color).into_iter()
                 .map(|mv| mv.to).collect()
         } else {
             Vec::new()
         };
         
-        let mut moves: Vec<Move> = self.get_linear_moves(
-            y, x, vec![(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)], true
-        ).into_iter().filter(|mv| !squares_attacked.contains(&mv.to)).collect();
+        let mut moves: Vec<Move> = self.get_linear_moves(y, x, &KQ_STEPS, true)
+            .into_iter().filter(|mv| !squares_attacked.contains(&mv.to)).collect();
 
         if (y, x) == (7, 4) {
             if self.castling_is_ok(0, &squares_attacked) {
                 moves.push(Move {
                     from: (7, 4),
                     to: (7, 6),
-                    extra_move: Some(((7, 7), (7, 5))),
-                    extra_capture: None,
-                    new_en_passant: None,
+                    en_passant: false,
+                    new_en_passant: false,
+                    castle_dir: Some(Castle::Kingside),
                     promotes_to: None,
                 });
             }
@@ -444,9 +516,9 @@ impl Board {
                 moves.push(Move {
                     from: (7, 4),
                     to: (7, 2),
-                    extra_move: Some(((7, 0), (7, 3))),
-                    extra_capture: None,
-                    new_en_passant: None,
+                    en_passant: false,
+                    new_en_passant: false,
+                    castle_dir: Some(Castle::Queenside),
                     promotes_to: None,
                 });
             }
@@ -456,9 +528,9 @@ impl Board {
                 moves.push(Move {
                     from: (0, 4),
                     to: (0, 6),
-                    extra_move: Some(((0, 7), (0, 5))),
-                    extra_capture: None,
-                    new_en_passant: None,
+                    en_passant: false,
+                    new_en_passant: false,
+                    castle_dir: Some(Castle::Kingside),
                     promotes_to: None,
                 });
             }
@@ -466,9 +538,9 @@ impl Board {
                 moves.push(Move {
                     from: (0, 4),
                     to: (0, 2),
-                    extra_move: Some(((0, 0), (0, 3))),
-                    extra_capture: None,
-                    new_en_passant: None,
+                    en_passant: false,
+                    new_en_passant: false,
+                    castle_dir: Some(Castle::Queenside),
                     promotes_to: None,
                 });
             }
@@ -479,41 +551,34 @@ impl Board {
     fn get_pawn_moves(&self, y: usize, x: usize) -> Vec<Move> {
         let color = self.board[y][x].unwrap().is_white;
         let pawn_dir = if color {-1} else {1};
-        let will_promote = (y as i32 + pawn_dir) == {if color {0} else {7}};
+        let will_promote = (y as isize + pawn_dir) == {if color {0} else {7}};
         let mut moves = Vec::new();
-        if self.board[(y as i32 + pawn_dir) as usize][x].is_none() {
+        if self.board[(y as isize + pawn_dir) as usize][x].is_none() {
             if will_promote {
                 // Promotion moves
-                for pt in [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen] {
+                for pt in PROMOTABLES {
                     moves.push(Move {
                         from: (y, x),
-                        to: ((y as i32 + pawn_dir) as usize, x),
-                        extra_move: None,
-                        extra_capture: None,
-                        new_en_passant: None,
+                        to: ((y as isize + pawn_dir) as usize, x),
+                        en_passant: false,
+                        new_en_passant: false,
+                        castle_dir: None,
                         promotes_to: Some(pt),
                     });
                 }
             } else {
                 // Basic move
-                moves.push(Move {
-                    from: (y, x),
-                    to: ((y as i32 + pawn_dir) as usize, x),
-                    extra_move: None,
-                    extra_capture: None,
-                    new_en_passant: None,
-                    promotes_to: None,
-                });
+                moves.push(Move::basic((y, x), ((y as isize + pawn_dir) as usize, x)));
             }
             // Starting move
             if (color && y == 6) || (!color && y == 1) {
-                if self.board[(y as i32 + 2*pawn_dir) as usize][x].is_none() {
+                if self.board[(y as isize + 2*pawn_dir) as usize][x].is_none() {
                     moves.push(Move {
                         from: (y, x),
-                        to: ((y as i32 + 2*pawn_dir) as usize, x),
-                        extra_move: None,
-                        extra_capture: None,
-                        new_en_passant: Some(((y as i32 + 2*pawn_dir) as usize, x)),
+                        to: ((y as isize + 2*pawn_dir) as usize, x),
+                        en_passant: false,
+                        new_en_passant: true,
+                        castle_dir: None,
                         promotes_to: None,
                     });
                 }
@@ -522,39 +587,32 @@ impl Board {
 
         if x != 0 {
             // Capture left
-            if self.square_is_color((y as i32 + pawn_dir) as usize, x - 1, !color) {
+            if self.square_is_color((y as isize + pawn_dir) as usize, x - 1, !color) {
                 if will_promote {
                     // Capture left and promote
                     for pt in [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen] {
                         moves.push(Move {
                             from: (y, x),
-                            to: ((y as i32 + pawn_dir) as usize, x - 1),
-                            extra_move: None,
-                            extra_capture: None,
-                            new_en_passant: None,
+                            to: ((y as isize + pawn_dir) as usize, x - 1),
+                            en_passant: false,
+                            new_en_passant: false,
                             promotes_to: Some(pt),
+                            castle_dir: None,
                         });
                     }
                 } else {
                     // Don't promote
-                    moves.push(Move {
-                        from: (y, x),
-                        to: ((y as i32 + pawn_dir) as usize, x - 1),
-                        extra_move: None,
-                        extra_capture: None,
-                        new_en_passant: None,
-                        promotes_to: None,
-                    });
+                    moves.push(Move::basic((y, x), ((y as isize + pawn_dir) as usize, x - 1)));
                 }
                 // En passant left
                 if let Some(sq) = self.en_passant {
                     if sq == (y, x - 1) {
                         moves.push(Move {
                             from: (y, x),
-                            to: ((y as i32 + pawn_dir) as usize, x - 1),
-                            extra_move: None,
-                            extra_capture: Some((y, x - 1)),
-                            new_en_passant: None,
+                            to: ((y as isize + pawn_dir) as usize, x - 1),
+                            en_passant: true,
+                            new_en_passant: false,
+                            castle_dir: None,
                             promotes_to: None,
                         });
                     }
@@ -563,29 +621,22 @@ impl Board {
         }
         if x != 7 {
             // Capture right
-            if self.square_is_color((y as i32 + pawn_dir) as usize, x + 1, !color) {
+            if self.square_is_color((y as isize + pawn_dir) as usize, x + 1, !color) {
                 if will_promote {
                     // Capture right and promote
-                    for pt in [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen] {
+                    for pt in PROMOTABLES {
                         moves.push(Move {
                             from: (y, x),
-                            to: ((y as i32 + pawn_dir) as usize, x),
-                            extra_move: None,
-                            extra_capture: None,
-                            new_en_passant: None,
+                            to: ((y as isize + pawn_dir) as usize, x),
+                            en_passant: false,
+                            new_en_passant: false,
+                            castle_dir: None,
                             promotes_to: Some(pt),
                         });
                     }
                 } else {
                     // Don't promote
-                    moves.push(Move {
-                        from: (y, x),
-                        to: ((y as i32 + pawn_dir) as usize, x + 1),
-                        extra_move: None,
-                        extra_capture: None,
-                        new_en_passant: None,
-                        promotes_to: None,
-                    });
+                    moves.push(Move::basic((y, x), ((y as isize + pawn_dir) as usize, x + 1)));
                 }
             }
             // En passant right
@@ -593,11 +644,11 @@ impl Board {
                 if sq == (y, x + 1) {
                     moves.push(Move {
                         from: (y, x),
-                        to: ((y as i32 + pawn_dir) as usize, x + 1),
-                        extra_move: None,
-                        extra_capture: Some((y, x + 1)),
-                        new_en_passant: None,
+                        to: ((y as isize + pawn_dir) as usize, x + 1),
+                        en_passant: true,
+                        new_en_passant: false,
                         promotes_to: None,
+                        castle_dir: None,
                     });
                 }
             }
@@ -617,18 +668,27 @@ impl Board {
         }
     }
 
-    fn get_all_attacks(&self, color: bool) -> Vec<Move> {
+    fn get_attacks(&self, color: bool) -> Vec<Move> {
         self.find_players_pieces(color).into_iter()
         .flat_map(|(y, x)| self.get_piece_moves(y, x, false))
-        // .filter(|mv| mv.extra_move.is_none())
         .collect()
     }
 
-    fn get_all_moves(&self, color: bool) -> Vec<Move> {
-        self.find_players_pieces(color).into_iter()
-        .flat_map(|(y, x)| self.get_piece_moves(y, x, true))
-        .collect()
+    fn king_is_attacked(&self, color: bool) -> bool {
+        let king = self.find_piece(&Piece {
+            piece_type: PieceType::King,
+            is_white: color
+        })[0];
+
+        self.get_attacks(!color).into_iter()
+            .any(|mv| mv.to == king)
     }
+
+    // fn get_all_moves(&self, color: bool) -> Vec<Move> {
+    //     self.find_players_pieces(color).into_iter()
+    //     .flat_map(|(y, x)| self.get_piece_moves(y, x, true))
+    //     .collect()
+    // }
 
     fn get_legal_moves(&self) -> Vec<Move> {
         self.find_players_pieces(self.side_to_move).into_iter()
@@ -638,16 +698,6 @@ impl Board {
             test_board.make_move(mv);
             !test_board.king_is_attacked(self.side_to_move)
         }).collect()
-    }
-
-    fn king_is_attacked(&self, color: bool) -> bool {
-        let king = self.find_piece(&Piece {
-            piece_type: PieceType::King,
-            is_white: color
-        })[0];
-
-        self.get_all_moves(!color).into_iter()
-            .any(|mv| mv.to == king)
     }
 
     fn is_check(&self) -> bool {
@@ -662,6 +712,7 @@ impl Board {
         !self.is_check() && self.get_legal_moves().len() == 0
     }
 }
+
 
 fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
     if !my_move && board.is_checkmate() {
@@ -691,6 +742,7 @@ fn find_mate_within_n(board: &Board, max_depth: usize) -> Option<Move> {
     for mv in &moves {
         let mut test_board = board.clone();
         test_board.make_move(mv);
+        println!("{}", mv.uci());
         if is_mate_in_n(&test_board, max_depth - 1, false) {
             return Some(mv.clone());
         }
@@ -724,8 +776,20 @@ fn get_input(msg: &str) -> String {
 
 fn main() {
     let fen = get_input("Input FEN:");
-    let board = Board::from_fen(fen).unwrap();
+    let mut board = Board::from_fen(fen.as_str()).unwrap();
+    // let board = Board::default();
+
     println!("{}", board);
+
+    assert_eq!(fen, board.get_fen());
+
+    // for _ in 0..5 {
+    //     let mv = &board.get_legal_moves()[0];
+    //     println!("{}", mv.san(&board));
+    //     board.make_move(mv);
+    // }
+    // println!("{}", board);
+    // println!("{}", board.get_fen());
 
     let depth = get_input("Search depth:");
     let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
@@ -737,9 +801,7 @@ fn main() {
     println!("Time: {:?}", start.elapsed());
 
     match arb_mate {
-        Some(mv) => println!("{}", mv.to_uci()),
+        Some(mv) => println!("{}", mv.uci()),
         None => println!("No mate")
     }
 }
-// Fails:
-// 2kr4/pp3p2/2p1b3/3p4/8/2NB2q1/PPP2QPr/R4RK1 b - - 0 1
