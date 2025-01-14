@@ -399,7 +399,7 @@ impl Board {
         };
 
         // Update en passant square
-        self.en_passant = if mv.new_en_passant { Some((to_y, to_x)) } else {None};
+        self.en_passant = if mv.new_en_passant { Some(((to_y as isize - {if piece.is_white {-1} else {1}}) as usize, to_x)) } else {None};
         // Update fullmove num
         if !self.side_to_move {self.fullmove_num += 1;}
         // Update turn
@@ -476,33 +476,33 @@ impl Board {
     fn get_queen_moves(&self, y: usize, x: usize) -> Vec<Move> {
         self.get_linear_moves(y, x, &KQ_STEPS, false)
     }
-    fn castling_is_ok(&self, castle: usize, squares_attacked: &Vec<Coord>) -> bool {
-        let (right, empty, not_attacked) = match castle {
-            0 => (self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)], [(7, 4), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
-            1 => (self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)], [(7, 2), (7, 3), (7, 4)]),
-            2 => (self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)], [(0, 4), (0, 5), (0, 6)]),
-            3 => (self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)], [(0, 2), (0, 3), (0, 4)]),
+    fn castling_is_ok(&self, castle: usize) -> bool {
+        let (allowed, empty) = match castle {
+            0 => (self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)],), // [(7, 4), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
+            1 => (self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)],), // [(7, 2), (7, 3), (7, 4)]),
+            2 => (self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)],), // [(0, 4), (0, 5), (0, 6)]),
+            3 => (self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)],), // [(0, 2), (0, 3), (0, 4)]),
             x => panic!("castling_is_ok: illegal `castle` arg: {}", x)
         };
-        right && empty.into_iter().all(|(y, x)| self.board[y][x].is_none())
-        && not_attacked.into_iter().all(|c| !squares_attacked.contains(&c))
+        allowed && empty.into_iter().all(|(y, x)| self.board[y][x].is_none())
+        // && not_attacked.into_iter().all(|c| !squares_attacked.contains(&c))
     }
 
-    fn get_king_moves(&self, y: usize, x: usize, check_not_attacked: bool) -> Vec<Move> {
-        let color = self.board[y][x].unwrap().is_white;
+    fn get_king_moves(&self, y: usize, x: usize) -> Vec<Move> {
+        // let color = self.board[y][x].unwrap().is_white;
 
-        let squares_attacked: Vec<Coord> = if check_not_attacked {
-            self.get_attacks(!color).into_iter()
-                .map(|mv| mv.to).collect()
-        } else {
-            Vec::new()
-        };
+        // let squares_attacked: Vec<Coord> = if check_not_attacked {
+        //     self.get_attacks(!color).into_iter()
+        //         .map(|mv| mv.to).collect()
+        // } else {
+        //     Vec::new()
+        // };
         
-        let mut moves: Vec<Move> = self.get_linear_moves(y, x, &KQ_STEPS, true)
-            .into_iter().filter(|mv| !squares_attacked.contains(&mv.to)).collect();
+        let mut moves: Vec<Move> = self.get_linear_moves(y, x, &KQ_STEPS, true);
+            // .into_iter().filter(|mv| !squares_attacked.contains(&mv.to)).collect();
 
         if (y, x) == (7, 4) {
-            if self.castling_is_ok(0, &squares_attacked) {
+            if self.castling_is_ok(0) {
                 moves.push(Move {
                     from: (7, 4),
                     to: (7, 6),
@@ -512,7 +512,7 @@ impl Board {
                     promotes_to: None,
                 });
             }
-            if self.castling_is_ok(1, &squares_attacked) {
+            if self.castling_is_ok(1) {
                 moves.push(Move {
                     from: (7, 4),
                     to: (7, 2),
@@ -524,7 +524,7 @@ impl Board {
             }
         }
         if (y, x) == (0, 4) {
-            if self.castling_is_ok(2, &squares_attacked) {
+            if self.castling_is_ok(2) {
                 moves.push(Move {
                     from: (0, 4),
                     to: (0, 6),
@@ -534,7 +534,7 @@ impl Board {
                     promotes_to: None,
                 });
             }
-            if self.castling_is_ok(3, &squares_attacked) {
+            if self.castling_is_ok(3) {
                 moves.push(Move {
                     from: (0, 4),
                     to: (0, 2),
@@ -606,7 +606,7 @@ impl Board {
                 }
                 // En passant left
                 if let Some(sq) = self.en_passant {
-                    if sq == (y, x - 1) {
+                    if sq == ((y as isize + pawn_dir) as usize, x - 1) {
                         moves.push(Move {
                             from: (y, x),
                             to: ((y as isize + pawn_dir) as usize, x - 1),
@@ -641,7 +641,7 @@ impl Board {
             }
             // En passant right
             if let Some(sq) = self.en_passant {
-                if sq == (y, x + 1) {
+                if sq == ((y as isize + pawn_dir) as usize, x + 1) {
                     moves.push(Move {
                         from: (y, x),
                         to: ((y as isize + pawn_dir) as usize, x + 1),
@@ -656,21 +656,21 @@ impl Board {
         moves
     }
 
-    fn get_piece_moves(&self, y: usize, x: usize, check_not_attacked: bool) -> Vec<Move> {
+    fn get_piece_moves(&self, y: usize, x: usize) -> Vec<Move> {
         let piece = self.board[y][x].unwrap();
         match piece.piece_type {
             PieceType::Rook => self.get_rook_moves(y, x),
             PieceType::Knight => self.get_knight_moves(y, x),
             PieceType::Bishop => self.get_bishop_moves(y, x),
             PieceType::Queen => self.get_queen_moves(y, x),
-            PieceType::King => self.get_king_moves(y, x, check_not_attacked),
+            PieceType::King => self.get_king_moves(y, x),
             PieceType::Pawn => self.get_pawn_moves(y, x),
         }
     }
 
     fn get_attacks(&self, color: bool) -> Vec<Move> {
         self.find_players_pieces(color).into_iter()
-        .flat_map(|(y, x)| self.get_piece_moves(y, x, false))
+        .flat_map(|(y, x)| self.get_piece_moves(y, x))
         .collect()
     }
 
@@ -684,16 +684,33 @@ impl Board {
             .any(|mv| mv.to == king)
     }
 
-    // fn get_all_moves(&self, color: bool) -> Vec<Move> {
-    //     self.find_players_pieces(color).into_iter()
-    //     .flat_map(|(y, x)| self.get_piece_moves(y, x, true))
-    //     .collect()
-    // }
+    /*
+    Checkmate
+    - King is attacked
+      - Find my king
+      - Get their attacks
+        - Find their pieces
+        - Get all of their moves -- TODO: remove pawn non-attacks
+        - return
+      - Check if any attack lands on king square
+      - return
+    - Get legal moves
+      - Find my pieces
+      - Get all of my moves
+      - Filter by:
+        - Make the move
+        - Is king attacked
+    To find legal moves:
+    - Their pieces and attacks
+    - My pieces and moves
+      - Their pieces and attacks for each move (different board = no duplicated lookup)
+    - No short-circuiting possible, entire space must be searched
+
+    */
 
     fn get_legal_moves(&self) -> Vec<Move> {
-        self.find_players_pieces(self.side_to_move).into_iter()
-        .flat_map(|(y, x)| self.get_piece_moves(y, x, true))
-        .filter(|mv| {
+        self.get_attacks(self.side_to_move)
+        .into_iter().filter(|mv| {
             let mut test_board = self.clone();
             test_board.make_move(mv);
             !test_board.king_is_attacked(self.side_to_move)
@@ -781,7 +798,8 @@ fn main() {
 
     println!("{}", board);
 
-    assert_eq!(fen, board.get_fen());
+    println!("{}", board.get_fen());
+    
 
     // for _ in 0..5 {
     //     let mv = &board.get_legal_moves()[0];
