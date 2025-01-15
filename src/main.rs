@@ -115,7 +115,7 @@ struct Move {
     // is_attack: bool,
     en_passant: bool,
     new_en_passant: bool,
-    castle_dir: Option<Castle>, // also for castling
+    castle_dir: Option<Castle>,
     promotes_to: Option<PieceType>,
 }
 
@@ -138,43 +138,44 @@ impl Move {
         )
     }
 
-    fn san(&self, board: &Board) -> String {
-        // Todo: fix specifying coordinates
-        let (f, t) = (self.from, self.to);
+    // This is too much of a hassle rn, later
+    // fn san(&self, board: &Board) -> String {
+    //     // Todo: fix specifying coordinates
+    //     let (f, t) = (self.from, self.to);
 
-        let p = board.board[f.0][f.1].unwrap();
-        let piece = match p.piece_type {
-            PieceType::Pawn => String::from((f.1 as u8 + 'a' as u8) as char),
-            p => p.to_string().to_ascii_uppercase()
-        };
+    //     let p = board.board[f.0][f.1].unwrap();
+    //     let piece = match p.piece_type {
+    //         PieceType::Pawn => String::from((f.1 as u8 + 'a' as u8) as char),
+    //         p => p.to_string().to_ascii_uppercase()
+    //     };
 
-        let mut from_spec = String::new();
-        let copies = board.find_piece(&p);
-        let mut file_added = false;
-        let mut rank_added = false;
-        for (y, x) in copies {
-            if (y, x) == f { continue; }
-            if y == f.0 && !file_added {
-                from_spec += &((f.1 as u8 + 'a' as u8) as char).to_string();
-                file_added = true;
-            }
-            if x == f.1 && !rank_added {
-                from_spec += &(8 - y).to_string();
-                rank_added = true;
-            }
-        }
+    //     let mut from_spec = String::new();
+    //     let copies = board.find_piece(&p);
+    //     let mut file_added = false;
+    //     let mut rank_added = false;
+    //     for (y, x) in copies {
+    //         if (y, x) == f { continue; }
+    //         if y == f.0 && !file_added {
+    //             from_spec += &((f.1 as u8 + 'a' as u8) as char).to_string();
+    //             file_added = true;
+    //         }
+    //         if x == f.1 && !rank_added {
+    //             from_spec += &(8 - y).to_string();
+    //             rank_added = true;
+    //         }
+    //     }
 
-        let capture = if board.board[t.0][t.1].is_some() {"x"} else {""};
-        let dest = coord_to_string((t.0, t.1)).unwrap();
-        let promo = if let Some(p) = self.promotes_to {
-            format!("={}", &p.to_string())
-        } else {
-            String::new()
-        };
-        let result = if board.is_checkmate() {"#"} else if board.is_check() {"+"} else {""};
+    //     let capture = if board.board[t.0][t.1].is_some() {"x"} else {""};
+    //     let dest = coord_to_string((t.0, t.1)).unwrap();
+    //     let promo = if let Some(p) = self.promotes_to {
+    //         format!("={}", &p.to_string())
+    //     } else {
+    //         String::new()
+    //     };
+    //     let result = if board.is_checkmate() {"#"} else if board.is_check() {"+"} else {""};
 
-        format!("{piece}{from_spec}{capture}{dest}{promo}{result}")
-    }
+    //     format!("{piece}{from_spec}{capture}{dest}{promo}{result}")
+    // }
 }
 
 #[derive(Clone)]

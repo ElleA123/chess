@@ -7,3 +7,5 @@ edition = "2021"
 
 [profile.release]
 debug = true
+codegen_units = 1
+lto = "fat"
