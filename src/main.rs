@@ -45,14 +45,14 @@ fn coord_to_string(coord: Coord) -> Option<String> {
 const WHITE: bool = true;
 const BLACK: bool = false;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, PartialOrd, Ord)]
 enum PieceType {
-    Rook,
-    Knight,
-    Bishop,
-    Queen,
+    Pawn,
     King,
-    Pawn
+    Bishop,
+    Knight,
+    Rook,
+    Queen
 }
 
 impl PieceType {
@@ -732,21 +732,26 @@ impl Board {
 
 
 fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
-    if !my_move && board.is_checkmate() {
+    let mut moves = board.get_legal_moves();
+    moves.sort_by(|mv1, mv2|
+        board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
+    );
+
+    if !my_move && (board.is_check() && moves.len() == 0) {
         return true;
     }
-    if board.get_legal_moves().len() == 0 || depth == 0 {
+    if moves.len() == 0 || depth == 0 {
         return false;
     }
 
     if my_move {
-        board.get_legal_moves().into_iter().any(|mv| {
+        moves.into_iter().any(|mv| {
             let mut test_board = board.clone();
             test_board.make_move(&mv);
             is_mate_in_n(&test_board, depth - 1, !my_move)
         })
     } else {
-        board.get_legal_moves().into_iter().all(|mv| {
+        moves.into_iter().all(|mv| {
             let mut test_board = board.clone();
             test_board.make_move(&mv);
             is_mate_in_n(&test_board, depth, !my_move)
@@ -755,7 +760,10 @@ fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
 }
 
 fn find_mate_within_n(board: &Board, max_depth: usize) -> Option<Move> {
-    let moves = board.get_legal_moves();
+    let mut moves = board.get_legal_moves();
+    moves.sort_by(|mv1, mv2|
+        board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
+    );
     for mv in &moves {
         let mut test_board = board.clone();
         test_board.make_move(mv);
@@ -792,8 +800,9 @@ fn get_input(msg: &str) -> String {
 }
 
 fn main() {
-    let fen = get_input("Input FEN:");
-    let mut board = Board::from_fen(fen.as_str()).unwrap();
+    // let fen = get_input("Input FEN:");
+    let fen = "r4rk1/p7/2Q3p1/2Pp4/6p1/N1P4P/P4qPK/R4R2 b - - 0 1";
+    let mut board = Board::from_fen(fen).unwrap();
     // let board = Board::default();
 
     println!("{}", board);
@@ -809,8 +818,9 @@ fn main() {
     // println!("{}", board);
     // println!("{}", board.get_fen());
 
-    let depth = get_input("Search depth:");
-    let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
+    // let depth = get_input("Search depth:");
+    // let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
+    let depth = 3;
 
     let start = Instant::now();
 
