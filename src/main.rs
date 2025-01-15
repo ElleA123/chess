@@ -7,11 +7,6 @@ const KQ_STEPS: [(isize, isize); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1),
 
 const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
 
-enum ParseFenError {
-    BoardError,
-
-}
-
 type Coord = (usize, usize);
 
 fn coord_from_str(san: &str) -> Option<Coord> {
@@ -190,8 +185,6 @@ struct Board {
     en_passant: Option<Coord>,
     halfmove_count: usize,
     fullmove_num: usize,
-    // pieces: Option<Vec<Coord>>,
-    // legal_moves: Option<Vec<Move>>,
 }
 
 impl std::fmt::Display for Board {
@@ -291,7 +284,7 @@ impl Board {
         }
     }
 
-    fn get_fen(&self) -> String {
+    fn fen(&self) -> String {
         let board = (0..8).into_iter().map(|y| {
             let mut row = String::new();
             let mut gap: u8 = 0;
@@ -453,9 +446,6 @@ impl Board {
             let mut test_y = (y as isize + step_y) as usize;
             let mut test_x = (x as isize + step_x) as usize;
             while Board::is_on_board(test_y, test_x) {
-                // Empty: add move and continue
-                // Opposite color: add move and stop
-                // Same color: stop w/o adding move
                 if !self.square_is_color(test_y, test_x, color) {
                     moves.push(Move::basic((y, x), (test_y, test_x)));
                     if self.square_is_color(test_y, test_x, !color) {
@@ -490,28 +480,17 @@ impl Board {
     }
     fn castling_is_ok(&self, castle: usize) -> bool {
         let (allowed, empty) = match castle {
-            0 => (self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)],), // [(7, 4), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
-            1 => (self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)],), // [(7, 2), (7, 3), (7, 4)]),
-            2 => (self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)],), // [(0, 4), (0, 5), (0, 6)]),
-            3 => (self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)],), // [(0, 2), (0, 3), (0, 4)]),
+            0 => (self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
+            1 => (self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)]),
+            2 => (self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)]),
+            3 => (self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)]),
             x => panic!("castling_is_ok: illegal `castle` arg: {}", x)
         };
         allowed && empty.into_iter().all(|(y, x)| self.board[y][x].is_none())
-        // && not_attacked.into_iter().all(|c| !squares_attacked.contains(&c))
     }
 
     fn get_king_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        // let color = self.board[y][x].unwrap().is_white;
-
-        // let squares_attacked: Vec<Coord> = if check_not_attacked {
-        //     self.get_attacks(!color).into_iter()
-        //         .map(|mv| mv.to).collect()
-        // } else {
-        //     Vec::new()
-        // };
-        
         let mut moves: Vec<Move> = self.get_linear_moves(y, x, &KQ_STEPS, true);
-            // .into_iter().filter(|mv| !squares_attacked.contains(&mv.to)).collect();
 
         if (y, x) == (7, 4) {
             if self.castling_is_ok(0) {
@@ -695,31 +674,6 @@ impl Board {
             .any(|mv| mv.to == king)
     }
 
-    /*
-    Checkmate
-    - King is attacked
-      - Find my king
-      - Get their attacks
-        - Find their pieces
-        - Get all of their moves -- TODO: remove pawn non-attacks
-        - return
-      - Check if any attack lands on king square
-      - return
-    - Get legal moves
-      - Find my pieces
-      - Get all of my moves
-      - Filter by:
-        - Make the move
-        - Is king attacked
-    To find legal moves:
-    - Their pieces and attacks
-    - My pieces and moves
-      - Their pieces and attacks for each move (different board = no duplicated lookup)
-    - No short-circuiting possible, entire space must be searched
-
-    */
-
-    // fn get_legal_moves<'a>(&'a self) -> std::iter::Filter<impl Iterator<Item = Move> + 'a, impl FnMut(&Move) -> bool + 'a> {
     fn get_legal_moves<'a>(&'a self) -> impl Iterator<Item = Move> + 'a {
         self.get_attacks(self.side_to_move)
         .into_iter().filter(|mv| {
@@ -744,11 +698,7 @@ impl Board {
 
 
 fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
-    // println!("{}\n{} {}", board, depth, my_move);
     let mut moves = board.get_legal_moves();
-    // moves.sort_by(|mv1, mv2|
-    //     board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
-    // );
 
     if my_move {
         moves.any(|mv| {
@@ -777,13 +727,9 @@ fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
 
 fn find_mate_within_n(board: &Board, max_depth: usize) -> Option<Move> {
     let moves = board.get_legal_moves();
-    // moves.sort_by(|mv1, mv2|
-    //     board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
-    // );
     for mv in moves {
         let mut test_board = board.clone();
         test_board.make_move(&mv);
-        println!("{}", mv.uci());
         if is_mate_in_n(&test_board, max_depth - 1, false) {
             return Some(mv.clone());
         }
