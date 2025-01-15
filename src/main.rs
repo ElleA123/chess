@@ -419,19 +419,31 @@ impl Board {
         }
     }
 
-    fn find_players_pieces(&self, color: bool) -> Vec<Coord> {
+    fn find_players_pieces<'a>(&'a self, color: bool) -> impl Iterator<Item = Coord> + 'a {
         (0..64).map(|i| (i / 8, i % 8))
-        .filter(|&(y, x)| self.square_is_color(y, x, color))
-        .collect()
+        .filter(move |&(y, x)| self.square_is_color(y, x, color))
     }
 
-    fn find_piece(&self, piece: &Piece) -> Vec<Coord> {
-        (0..64).map(|i| (i / 8, i % 8)).filter(|&(y, x)| {
+    fn find_pieces<'a>(&'a self, piece: &'a Piece) -> impl Iterator<Item = Coord> + 'a { // Is it ok to give piece that 'a? I hope so...
+        (0..64).map(|i| (i / 8, i % 8)).filter(move |&(y, x)| {
             match self.board[y][x] {
                 Some(p) => &p == piece,
                 None => false
             }
-        }).collect()
+        })
+    }
+
+    fn find_piece(&self, piece: &Piece) -> Option<Coord> {
+        for y in 0..8 {
+            for x in 0..8 {
+                if let Some(p) = self.board[y][x] {
+                    if &p == piece {
+                        return Some((y, x));
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn get_linear_moves(&self, y: usize, x: usize, step_list: &[(isize, isize)], one_step_only: bool) -> Vec<Move> {
@@ -668,17 +680,16 @@ impl Board {
         }
     }
 
-    fn get_attacks(&self, color: bool) -> Vec<Move> {
-        self.find_players_pieces(color).into_iter()
+    fn get_attacks<'a>(&'a self, color: bool) -> impl Iterator<Item = Move> + 'a {
+        self.find_players_pieces(color)
         .flat_map(|(y, x)| self.get_piece_moves(y, x))
-        .collect()
     }
 
     fn king_is_attacked(&self, color: bool) -> bool {
         let king = self.find_piece(&Piece {
             piece_type: PieceType::King,
             is_white: color
-        })[0];
+        }).unwrap();
 
         self.get_attacks(!color).into_iter()
             .any(|mv| mv.to == king)
@@ -708,13 +719,14 @@ impl Board {
 
     */
 
-    fn get_legal_moves(&self) -> Vec<Move> {
+    // fn get_legal_moves<'a>(&'a self) -> std::iter::Filter<impl Iterator<Item = Move> + 'a, impl FnMut(&Move) -> bool + 'a> {
+    fn get_legal_moves<'a>(&'a self) -> impl Iterator<Item = Move> + 'a {
         self.get_attacks(self.side_to_move)
         .into_iter().filter(|mv| {
             let mut test_board = self.clone();
             test_board.make_move(mv);
             !test_board.king_is_attacked(self.side_to_move)
-        }).collect()
+        })
     }
 
     fn is_check(&self) -> bool {
@@ -722,51 +734,55 @@ impl Board {
     }
 
     fn is_checkmate(&self) -> bool {
-        self.is_check() && self.get_legal_moves().len() == 0
+        self.is_check() && self.get_legal_moves().count() == 0
     }
 
     fn is_stalemate(&self) -> bool {
-        !self.is_check() && self.get_legal_moves().len() == 0
+        !self.is_check() && self.get_legal_moves().count() == 0
     }
 }
 
 
 fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
+    // println!("{}\n{} {}", board, depth, my_move);
     let mut moves = board.get_legal_moves();
-    moves.sort_by(|mv1, mv2|
-        board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
-    );
-
-    if !my_move && (board.is_check() && moves.len() == 0) {
-        return true;
-    }
-    if moves.len() == 0 || depth == 0 {
-        return false;
-    }
+    // moves.sort_by(|mv1, mv2|
+    //     board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
+    // );
 
     if my_move {
-        moves.into_iter().any(|mv| {
+        moves.any(|mv| {
             let mut test_board = board.clone();
             test_board.make_move(&mv);
             is_mate_in_n(&test_board, depth - 1, !my_move)
         })
     } else {
-        moves.into_iter().all(|mv| {
+        if depth == 0 {
+            return moves.count() == 0 && board.king_is_attacked(board.side_to_move);
+        }
+        let mut no_moves = true;
+        let res = moves.all(|mv| {
+            no_moves = false;
             let mut test_board = board.clone();
             test_board.make_move(&mv);
             is_mate_in_n(&test_board, depth, !my_move)
-        })
+        });
+        if no_moves {
+            res && board.king_is_attacked(board.side_to_move)
+        } else {
+            res
+        }
     }
 }
 
 fn find_mate_within_n(board: &Board, max_depth: usize) -> Option<Move> {
-    let mut moves = board.get_legal_moves();
-    moves.sort_by(|mv1, mv2|
-        board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
-    );
-    for mv in &moves {
+    let moves = board.get_legal_moves();
+    // moves.sort_by(|mv1, mv2|
+    //     board.board[mv2.from.0][mv2.from.1].unwrap().piece_type.cmp(&board.board[mv1.from.0][mv1.from.1].unwrap().piece_type)
+    // );
+    for mv in moves {
         let mut test_board = board.clone();
-        test_board.make_move(mv);
+        test_board.make_move(&mv);
         println!("{}", mv.uci());
         if is_mate_in_n(&test_board, max_depth - 1, false) {
             return Some(mv.clone());
@@ -800,27 +816,17 @@ fn get_input(msg: &str) -> String {
 }
 
 fn main() {
-    // let fen = get_input("Input FEN:");
-    let fen = "r4rk1/p7/2Q3p1/2Pp4/6p1/N1P4P/P4qPK/R4R2 b - - 0 1";
-    let mut board = Board::from_fen(fen).unwrap();
+    let fen = get_input("Input FEN:");
+    // let fen = "r4rk1/p7/2Q3p1/2Pp4/6p1/N1P4P/P4qPK/R4R2 b - - 0 1";
+
+    let board = Board::from_fen(fen.as_str()).unwrap();
     // let board = Board::default();
 
     println!("{}", board);
 
-    println!("{}", board.get_fen());
-    
-
-    // for _ in 0..5 {
-    //     let mv = &board.get_legal_moves()[0];
-    //     println!("{}", mv.san(&board));
-    //     board.make_move(mv);
-    // }
-    // println!("{}", board);
-    // println!("{}", board.get_fen());
-
-    // let depth = get_input("Search depth:");
-    // let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
-    let depth = 3;
+    let depth = get_input("Search depth:");
+    let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
+    // let depth = 3;
 
     let start = Instant::now();
 
