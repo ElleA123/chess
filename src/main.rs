@@ -165,10 +165,11 @@ impl Move {
     }
 }
 
+#[derive(Clone)] // Goal: remove this
 struct UndoData {
+    move_type: MoveType,
     captured: Option<Piece>,
     en_passant: Option<Coord>,
-    was_promotion: bool,
 }
 
 #[derive(Clone)]
@@ -179,6 +180,7 @@ struct Board {
     en_passant: Option<Coord>,
     halfmove_count: usize,
     fullmove_num: usize,
+    undo_stack: Vec<UndoData>
 }
 
 impl std::fmt::Display for Board {
@@ -271,7 +273,8 @@ impl Board {
                 allowed_castling,
                 en_passant,
                 halfmove_count,
-                fullmove_num
+                fullmove_num,
+                undo_stack: Vec::new()
             })
         } else {
             None
@@ -335,9 +338,20 @@ impl Board {
         let (to_y, to_x) = mv.to;
 
         let piece = self.board[from_y][from_x].unwrap();
+        let (captured, is_capture) = match self.board[to_y][to_x] {
+            Some(p) => (Some(p), true),
+            None => (None, mv.move_type == MoveType::EnPassant)
+        };
+
+        // Add data to undo this move
+        self.undo_stack.push(UndoData {
+            move_type: mv.move_type.clone(),
+            captured,
+            en_passant: self.en_passant
+        });
 
         // Update halfmove count
-        if piece.piece_type == PieceType::Pawn || self.board[to_y][to_x].is_some() {
+        if piece.piece_type == PieceType::Pawn || is_capture {
             self.halfmove_count = 0;
         } else {
             self.halfmove_count += 1;
@@ -396,11 +410,15 @@ impl Board {
         self.side_to_move = !self.side_to_move;
     }
 
-    // fn make_moves(&mut self, moves: &Vec<Move>) {
+    // fn make_moves(&mut self, moves: Vec<&Move>) {
     //     for mv in moves {
     //         self.make_move(mv);
     //     }
     // }
+
+    fn undo_move(&mut self, mv: &Move) {
+        // TODO
+    }
 
     fn square_is_color(&self, y: usize, x: usize, color: bool) -> bool {
         match self.board[y][x] {
