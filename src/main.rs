@@ -7,6 +7,29 @@ const KQ_STEPS: [(isize, isize); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1),
 
 const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
 
+const CASTLES: [Move; 4] = [
+    Move {
+        from: (7, 4),
+        to: (7, 6),
+        move_type: MoveType::Castle
+    },
+    Move {
+        from: (7, 4),
+        to: (7, 2),
+        move_type: MoveType::Castle
+    },
+    Move {
+        from: (0, 4),
+        to: (0, 6),
+        move_type: MoveType::Castle
+    },
+    Move {
+        from: (0, 4),
+        to: (0, 2),
+        move_type: MoveType::Castle
+    }
+];
+
 type Coord = (usize, usize);
 
 fn coord_from_str(san: &str) -> Option<Coord> {
@@ -103,32 +126,35 @@ impl Piece {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-enum Castle {
-    Kingside,
-    Queenside
+enum MoveType {
+    Basic,
+    EnPassant,
+    Castle,
+    Promotion(PieceType)
 }
 
 #[derive(Debug, PartialEq, Clone)]
 struct Move {
     from: Coord,
     to: Coord,
-    // is_attack: bool,
-    en_passant: bool,
-    new_en_passant: bool,
-    castle_dir: Option<Castle>,
-    promotes_to: Option<PieceType>,
+    move_type: MoveType
 }
 
 impl Move {
-    fn basic(from: Coord, to: Coord) -> Self {
+    fn new(from: Coord, to: Coord, move_type: MoveType) -> Self {
         Move {
             from,
             to,
-            en_passant: false,
-            new_en_passant: false,
-            castle_dir: None,
-            promotes_to: None
+            move_type
         }
+    }
+
+    fn promotions(from: Coord, to: Coord) -> impl Iterator<Item = Self> {
+        PROMOTABLES.iter().map(move |&pt| Move {
+            from,
+            to,
+            move_type: MoveType::Promotion(pt)
+        })
     }
 
     fn uci(&self) -> String {
@@ -137,45 +163,12 @@ impl Move {
             coord_to_string(self.to).unwrap()
         )
     }
+}
 
-    // This is too much of a hassle rn, later
-    // fn san(&self, board: &Board) -> String {
-    //     // Todo: fix specifying coordinates
-    //     let (f, t) = (self.from, self.to);
-
-    //     let p = board.board[f.0][f.1].unwrap();
-    //     let piece = match p.piece_type {
-    //         PieceType::Pawn => String::from((f.1 as u8 + 'a' as u8) as char),
-    //         p => p.to_string().to_ascii_uppercase()
-    //     };
-
-    //     let mut from_spec = String::new();
-    //     let copies = board.find_piece(&p);
-    //     let mut file_added = false;
-    //     let mut rank_added = false;
-    //     for (y, x) in copies {
-    //         if (y, x) == f { continue; }
-    //         if y == f.0 && !file_added {
-    //             from_spec += &((f.1 as u8 + 'a' as u8) as char).to_string();
-    //             file_added = true;
-    //         }
-    //         if x == f.1 && !rank_added {
-    //             from_spec += &(8 - y).to_string();
-    //             rank_added = true;
-    //         }
-    //     }
-
-    //     let capture = if board.board[t.0][t.1].is_some() {"x"} else {""};
-    //     let dest = coord_to_string((t.0, t.1)).unwrap();
-    //     let promo = if let Some(p) = self.promotes_to {
-    //         format!("={}", &p.to_string())
-    //     } else {
-    //         String::new()
-    //     };
-    //     let result = if board.is_checkmate() {"#"} else if board.is_check() {"+"} else {""};
-
-    //     format!("{piece}{from_spec}{capture}{dest}{promo}{result}")
-    // }
+struct UndoData {
+    captured: Option<Piece>,
+    en_passant: Option<Coord>,
+    was_promotion: bool,
 }
 
 #[derive(Clone)]
@@ -351,31 +344,29 @@ impl Board {
         }
 
         // Make the swap
-        self.board[to_y][to_x] = match mv.promotes_to {
-            Some(p) => Some(Piece {
-                piece_type: p,
+        self.board[to_y][to_x] = if let MoveType::Promotion(pt) = mv.move_type {
+            Some(Piece {
+                piece_type: pt,
                 is_white: piece.is_white,
-            }),
-            None => Some(piece)};
+            })
+        } else {
+            Some(piece)
+        };
         self.board[from_y][from_x] = None;
 
-        // En passant
-        if mv.en_passant {
-            self.board[from_y][to_x] = None;
-        }
-
         // Castling
-        if let Some(dir) = &mv.castle_dir {
-            let (f_x, t_x) = match dir {
-                Castle::Kingside => (7, 5),
-                Castle::Queenside => (0, 3)
+        if mv.move_type == MoveType::Castle {
+            let (f_x, t_x) = match to_x {
+                6 => (7, 5),
+                2 => (0, 3),
+                _ => panic!("Error: invalid castle")
             };
             let extra_piece = self.board[from_y][f_x].unwrap();
             self.board[to_y][t_x] = Some(extra_piece);
             self.board[from_y][f_x] = None;
         }
 
-        // Update castling availability
+        // Update castling availability -- a bit inefficient but like whatevs?
         match (from_y, from_x) {
             (7, 4) => { // K
                 self.allowed_castling.0 = false;
@@ -393,8 +384,13 @@ impl Board {
         };
 
         // Update en passant square
-        self.en_passant = if mv.new_en_passant { Some(((to_y as isize - {if piece.is_white {-1} else {1}}) as usize, to_x)) } else {None};
-        // Update fullmove num
+        if piece.piece_type == PieceType::Pawn && (if to_y > from_y {to_y - from_y == 2} else {from_y - to_y == 2}) {
+            self.en_passant = Some(((to_y as isize - {if piece.is_white {-1} else {1}}) as usize, to_x));
+        } else {
+            self.en_passant = None;
+        }
+
+        // Update fullmove num after black moves
         if !self.side_to_move {self.fullmove_num += 1;}
         // Update turn
         self.side_to_move = !self.side_to_move;
@@ -448,7 +444,7 @@ impl Board {
             let mut test_x = (x as isize + step_x) as usize;
             while Board::is_on_board(test_y, test_x) {
                 if !self.square_is_color(test_y, test_x, color) {
-                    moves.push(Move::basic((y, x), (test_y, test_x)));
+                    moves.push(Move::new((y, x), (test_y, test_x), MoveType::Basic));
                     if self.square_is_color(test_y, test_x, !color) {
                         break;
                     }
@@ -479,62 +475,23 @@ impl Board {
     fn get_queen_moves(&self, y: usize, x: usize) -> Vec<Move> {
         self.get_linear_moves(y, x, &KQ_STEPS, false)
     }
-    fn castling_is_ok(&self, castle: usize) -> bool {
-        let (allowed, empty) = match castle {
-            0 => (self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
-            1 => (self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)]),
-            2 => (self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)]),
-            3 => (self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)]),
+    fn castling_is_ok(&self, castle: usize, y: usize, x: usize) -> bool {
+        let (req_y, allowed, empty) = match castle {
+            0 => (7, self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
+            1 => (7, self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)]),
+            2 => (0, self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)]),
+            3 => (0, self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)]),
             x => panic!("castling_is_ok: illegal `castle` arg: {}", x)
         };
-        allowed && empty.into_iter().all(|(y, x)| self.board[y][x].is_none())
+        y == req_y && x == 4 && allowed && empty.into_iter().all(|(y, x)| self.board[y][x].is_none())
     }
 
     fn get_king_moves(&self, y: usize, x: usize) -> Vec<Move> {
         let mut moves: Vec<Move> = self.get_linear_moves(y, x, &KQ_STEPS, true);
 
-        if (y, x) == (7, 4) {
-            if self.castling_is_ok(0) {
-                moves.push(Move {
-                    from: (7, 4),
-                    to: (7, 6),
-                    en_passant: false,
-                    new_en_passant: false,
-                    castle_dir: Some(Castle::Kingside),
-                    promotes_to: None,
-                });
-            }
-            if self.castling_is_ok(1) {
-                moves.push(Move {
-                    from: (7, 4),
-                    to: (7, 2),
-                    en_passant: false,
-                    new_en_passant: false,
-                    castle_dir: Some(Castle::Queenside),
-                    promotes_to: None,
-                });
-            }
-        }
-        if (y, x) == (0, 4) {
-            if self.castling_is_ok(2) {
-                moves.push(Move {
-                    from: (0, 4),
-                    to: (0, 6),
-                    en_passant: false,
-                    new_en_passant: false,
-                    castle_dir: Some(Castle::Kingside),
-                    promotes_to: None,
-                });
-            }
-            if self.castling_is_ok(3) {
-                moves.push(Move {
-                    from: (0, 4),
-                    to: (0, 2),
-                    en_passant: false,
-                    new_en_passant: false,
-                    castle_dir: Some(Castle::Queenside),
-                    promotes_to: None,
-                });
+        for castle in (0..4) {
+            if self.castling_is_ok(castle, y, x) {
+                moves.push(CASTLES[castle].clone());
             }
         }
         moves
@@ -548,31 +505,15 @@ impl Board {
         if self.board[(y as isize + pawn_dir) as usize][x].is_none() {
             if will_promote {
                 // Promotion moves
-                for pt in PROMOTABLES {
-                    moves.push(Move {
-                        from: (y, x),
-                        to: ((y as isize + pawn_dir) as usize, x),
-                        en_passant: false,
-                        new_en_passant: false,
-                        castle_dir: None,
-                        promotes_to: Some(pt),
-                    });
-                }
+                moves.extend(Move::promotions((y, x), ((y as isize + pawn_dir) as usize, x)));
             } else {
                 // Basic move
-                moves.push(Move::basic((y, x), ((y as isize + pawn_dir) as usize, x)));
+                moves.push(Move::new((y, x), ((y as isize + pawn_dir) as usize, x), MoveType::Basic));
             }
             // Starting move
             if (color && y == 6) || (!color && y == 1) {
                 if self.board[(y as isize + 2*pawn_dir) as usize][x].is_none() {
-                    moves.push(Move {
-                        from: (y, x),
-                        to: ((y as isize + 2*pawn_dir) as usize, x),
-                        en_passant: false,
-                        new_en_passant: true,
-                        castle_dir: None,
-                        promotes_to: None,
-                    });
+                    moves.push(Move::new((y, x), ((y as isize + 2*pawn_dir) as usize, x), MoveType::Basic));
                 }
             }
         }
@@ -582,31 +523,15 @@ impl Board {
             if self.square_is_color((y as isize + pawn_dir) as usize, x - 1, !color) {
                 if will_promote {
                     // Capture left and promote
-                    for pt in [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen] {
-                        moves.push(Move {
-                            from: (y, x),
-                            to: ((y as isize + pawn_dir) as usize, x - 1),
-                            en_passant: false,
-                            new_en_passant: false,
-                            promotes_to: Some(pt),
-                            castle_dir: None,
-                        });
-                    }
+                    moves.extend(Move::promotions((y, x), ((y as isize + pawn_dir) as usize, x - 1)));
                 } else {
                     // Don't promote
-                    moves.push(Move::basic((y, x), ((y as isize + pawn_dir) as usize, x - 1)));
+                    moves.push(Move::new((y, x), ((y as isize + pawn_dir) as usize, x - 1), MoveType::Basic));
                 }
                 // En passant left
                 if let Some(sq) = self.en_passant {
                     if sq == ((y as isize + pawn_dir) as usize, x - 1) {
-                        moves.push(Move {
-                            from: (y, x),
-                            to: ((y as isize + pawn_dir) as usize, x - 1),
-                            en_passant: true,
-                            new_en_passant: false,
-                            castle_dir: None,
-                            promotes_to: None,
-                        });
+                        moves.push(Move::new((y, x), ((y as isize + pawn_dir) as usize, x - 1), MoveType::EnPassant));
                     }
                 }
             }
@@ -616,32 +541,16 @@ impl Board {
             if self.square_is_color((y as isize + pawn_dir) as usize, x + 1, !color) {
                 if will_promote {
                     // Capture right and promote
-                    for pt in PROMOTABLES {
-                        moves.push(Move {
-                            from: (y, x),
-                            to: ((y as isize + pawn_dir) as usize, x),
-                            en_passant: false,
-                            new_en_passant: false,
-                            castle_dir: None,
-                            promotes_to: Some(pt),
-                        });
-                    }
+                    moves.extend(Move::promotions((y, x), ((y as isize + pawn_dir) as usize, x + 1)));
                 } else {
                     // Don't promote
-                    moves.push(Move::basic((y, x), ((y as isize + pawn_dir) as usize, x + 1)));
+                    moves.push(Move::new((y, x), ((y as isize + pawn_dir) as usize, x + 1), MoveType::Basic));
                 }
             }
             // En passant right
             if let Some(sq) = self.en_passant {
                 if sq == ((y as isize + pawn_dir) as usize, x + 1) {
-                    moves.push(Move {
-                        from: (y, x),
-                        to: ((y as isize + pawn_dir) as usize, x + 1),
-                        en_passant: true,
-                        new_en_passant: false,
-                        promotes_to: None,
-                        castle_dir: None,
-                    });
+                    moves.push(Move::new((y, x), ((y as isize + pawn_dir) as usize, x + 1), MoveType::EnPassant));
                 }
             }
         }
