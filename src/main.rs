@@ -167,9 +167,10 @@ impl Move {
 
 #[derive(Clone)] // Goal: remove this
 struct UndoData {
-    move_type: MoveType,
     captured: Option<Piece>,
     en_passant: Option<Coord>,
+    allowed_castling: (bool, bool, bool, bool),
+    halfmove_count: usize,
 }
 
 #[derive(Clone)]
@@ -336,8 +337,8 @@ impl Board {
         // Only legal moves should make it to this function
         let (from_y, from_x) = mv.from;
         let (to_y, to_x) = mv.to;
-
         let piece = self.board[from_y][from_x].unwrap();
+
         let (captured, is_capture) = match self.board[to_y][to_x] {
             Some(p) => (Some(p), true),
             None => (None, mv.move_type == MoveType::EnPassant)
@@ -345,9 +346,10 @@ impl Board {
 
         // Add data to undo this move
         self.undo_stack.push(UndoData {
-            move_type: mv.move_type.clone(),
             captured,
-            en_passant: self.en_passant
+            en_passant: self.en_passant,
+            allowed_castling: self.allowed_castling,
+            halfmove_count: self.halfmove_count
         });
 
         // Update halfmove count
@@ -417,7 +419,34 @@ impl Board {
     // }
 
     fn undo_move(&mut self, mv: &Move) {
-        // TODO
+        let Some(undo_data) = self.undo_stack.pop() else {return};
+
+        let (from_y, from_x) = mv.from;
+        let (to_y, to_x) = mv.to;
+        let piece = self.board[to_y][to_x].unwrap();
+
+        // Swap
+        self.board[from_y][from_x] = if let MoveType::Promotion(_) = mv.move_type {
+            Some(Piece {
+                piece_type: PieceType::Pawn,
+                is_white: piece.is_white
+            })
+        } else {
+            Some(piece)
+        };
+        self.board[to_y][to_x] = undo_data.captured;
+
+        // Update values from saved data
+        self.allowed_castling = undo_data.allowed_castling;
+        self.en_passant = undo_data.en_passant;
+        self.halfmove_count = undo_data.halfmove_count;
+        
+        // Undo fullmove count
+        if self.side_to_move {
+            self.fullmove_num -= 1;
+        }
+        // Update turn
+        self.side_to_move = !self.side_to_move;
     }
 
     fn square_is_color(&self, y: usize, x: usize, color: bool) -> bool {
@@ -690,26 +719,37 @@ fn get_input(msg: &str) -> String {
 }
 
 fn main() {
-    let fen = get_input("Input FEN:");
+    // let fen = get_input("Input FEN:");
     // let fen = "r4rk1/p7/2Q3p1/2Pp4/6p1/N1P4P/P4qPK/R4R2 b - - 0 1";
 
-    let board = Board::from_fen(fen.as_str()).unwrap();
-    // let board = Board::default();
+    // let board = Board::from_fen(fen.as_str()).unwrap();
+    let mut board = Board::default();
+    let mut moves: Vec<Move> = Vec::new();
+    for _ in 0..22 {
+        let mv = board.get_legal_moves().next().unwrap();
+        println!("{}", mv.uci());
+        board.make_move(&mv);
+        moves.push(mv);
+    }
+    println!("{}", board);
+    for mv in moves.into_iter().rev() {
+        board.undo_move(&mv);
+    }
 
     println!("{}", board);
 
-    let depth = get_input("Search depth:");
-    let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
-    // let depth = 3;
+    // let depth = get_input("Search depth:");
+    // let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
+    // // let depth = 3;
 
-    let start = Instant::now();
+    // let start = Instant::now();
 
-    let arb_mate = find_mate_within_n(&board, depth);
+    // let arb_mate = find_mate_within_n(&board, depth);
 
-    println!("Time: {:?}", start.elapsed());
+    // println!("Time: {:?}", start.elapsed());
 
-    match arb_mate {
-        Some(mv) => println!("{}", mv.uci()),
-        None => println!("No mate")
-    }
+    // match arb_mate {
+    //     Some(mv) => println!("{}", mv.uci()),
+    //     None => println!("No mate")
+    // }
 }
