@@ -165,7 +165,6 @@ impl Move {
     }
 }
 
-#[derive(Clone)] // Goal: remove this
 struct UndoData {
     captured: Option<Piece>,
     en_passant: Option<Coord>,
@@ -173,7 +172,6 @@ struct UndoData {
     halfmove_count: usize,
 }
 
-#[derive(Clone)]
 struct Board {
     board: [[Option<Piece>; 8]; 8],
     side_to_move: bool,
@@ -627,41 +625,43 @@ impl Board {
             is_white: color
         }).unwrap();
 
-        self.get_attacks(!color).into_iter()
+        self.get_attacks(!color)
             .any(|mv| mv.to == king)
     }
 
-    fn get_legal_moves<'a>(&'a self) -> impl Iterator<Item = Move> + 'a {
-        self.get_attacks(self.side_to_move)
-        .into_iter().filter(|mv| {
-            let mut test_board = self.clone();
-            test_board.make_move(mv);
-            !test_board.king_is_attacked(self.side_to_move)
-        })
+    fn get_legal_moves<'a>(&mut self) -> Vec<Move> {
+        self.get_attacks(self.side_to_move).collect::<Vec<Move>>().into_iter()
+        .filter(|mv| {
+            self.make_move(mv);
+            let is_legal = !self.king_is_attacked(!self.side_to_move);
+            self.undo_move(mv);
+            is_legal
+        }).collect()
     }
 
     fn is_check(&self) -> bool {
         self.king_is_attacked(self.side_to_move)
     }
 
-    fn is_checkmate(&self) -> bool {
-        self.is_check() && self.get_legal_moves().count() == 0
-    }
+    // fn is_checkmate(&self) -> bool {
+    //     self.is_check() && self.get_legal_moves().count() == 0
+    // }
 
-    fn is_stalemate(&self) -> bool {
-        !self.is_check() && self.get_legal_moves().count() == 0
-    }
+    // fn is_stalemate(&self) -> bool {
+    //     !self.is_check() && self.get_legal_moves().count() == 0
+    // }
 }
 
 
-fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
-    let mut moves = board.get_legal_moves();
+fn is_mate_in_n(board: &mut Board, depth: usize, my_move: bool) -> bool {
+    let mut moves = board.get_legal_moves().into_iter();
 
     if my_move {
         moves.any(|mv| {
-            let mut test_board = board.clone();
-            test_board.make_move(&mv);
-            is_mate_in_n(&test_board, depth - 1, !my_move)
+            board.make_move(&mv);
+            let is_mate = is_mate_in_n(board, depth - 1, !my_move);
+            board.undo_move(&mv);
+            is_mate
         })
     } else {
         if depth == 0 {
@@ -670,9 +670,10 @@ fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
         let mut no_moves = true;
         let res = moves.all(|mv| {
             no_moves = false;
-            let mut test_board = board.clone();
-            test_board.make_move(&mv);
-            is_mate_in_n(&test_board, depth, !my_move)
+            board.make_move(&mv);
+            let is_mate = is_mate_in_n(board, depth, !my_move);
+            board.undo_move(&mv);
+            is_mate
         });
         if no_moves {
             res && board.king_is_attacked(board.side_to_move)
@@ -682,14 +683,14 @@ fn is_mate_in_n(board: &Board, depth: usize, my_move: bool) -> bool {
     }
 }
 
-fn find_mate_within_n(board: &Board, max_depth: usize) -> Option<Move> {
-    let moves = board.get_legal_moves();
+fn find_mate_within_n(board: &mut Board, max_depth: usize) -> Option<Move> {
+    let moves: Vec<Move> = board.get_legal_moves();
     for mv in moves {
-        let mut test_board = board.clone();
-        test_board.make_move(&mv);
-        if is_mate_in_n(&test_board, max_depth - 1, false) {
+        board.make_move(&mv);
+        if is_mate_in_n(board, max_depth - 1, false) {
             return Some(mv.clone());
         }
+        board.undo_move(&mv);
     }
     None
 }
@@ -719,37 +720,26 @@ fn get_input(msg: &str) -> String {
 }
 
 fn main() {
-    // let fen = get_input("Input FEN:");
+    let fen = get_input("Input FEN:");
     // let fen = "r4rk1/p7/2Q3p1/2Pp4/6p1/N1P4P/P4qPK/R4R2 b - - 0 1";
 
-    // let board = Board::from_fen(fen.as_str()).unwrap();
-    let mut board = Board::default();
-    let mut moves: Vec<Move> = Vec::new();
-    for _ in 0..22 {
-        let mv = board.get_legal_moves().next().unwrap();
-        println!("{}", mv.uci());
-        board.make_move(&mv);
-        moves.push(mv);
-    }
-    println!("{}", board);
-    for mv in moves.into_iter().rev() {
-        board.undo_move(&mv);
-    }
+    let mut board = Board::from_fen(fen.as_str()).unwrap();
+    // let mut board = Board::default();
 
     println!("{}", board);
 
-    // let depth = get_input("Search depth:");
-    // let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
-    // // let depth = 3;
+    let depth = get_input("Search depth:");
+    let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
+    // let depth = 3;
 
-    // let start = Instant::now();
+    let start = Instant::now();
 
-    // let arb_mate = find_mate_within_n(&board, depth);
+    let arb_mate = find_mate_within_n(&mut board, depth);
 
-    // println!("Time: {:?}", start.elapsed());
+    println!("Time: {:?}", start.elapsed());
 
-    // match arb_mate {
-    //     Some(mv) => println!("{}", mv.uci()),
-    //     None => println!("No mate")
-    // }
+    match arb_mate {
+        Some(mv) => println!("{}", mv.uci()),
+        None => println!("No mate")
+    }
 }
