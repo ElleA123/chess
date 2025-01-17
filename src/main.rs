@@ -1,4 +1,7 @@
-use std::{i32, time::Instant};
+use std::{
+    i32,
+    time::Instant
+};
 
 const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 const N_STEPS: [(isize, isize); 8] = [(2, 1), (2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2), (-2, 1), (-2, -1)];
@@ -63,7 +66,7 @@ fn coord_to_string(coord: Coord) -> Option<String> {
 const WHITE: bool = true;
 const BLACK: bool = false;
 
-#[derive(Clone, Copy, PartialEq, Debug, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum PieceType {
     Rook,
     Knight,
@@ -87,7 +90,7 @@ impl PieceType {
     }
 
     fn to_string(&self) -> String {
-        format!("{}", match self {
+        String::from(match self {
             &PieceType::Rook => 'r',
             &PieceType::Knight => 'n',
             &PieceType::Bishop => 'b',
@@ -98,7 +101,7 @@ impl PieceType {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Piece {
     piece_type: PieceType,
     is_white: bool
@@ -125,7 +128,7 @@ impl Piece {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum MoveType {
     Basic,
     EnPassant,
@@ -133,7 +136,7 @@ enum MoveType {
     Promotion(PieceType)
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Move {
     from: Coord,
     to: Coord,
@@ -158,10 +161,14 @@ impl Move {
     }
 
     fn uci(&self) -> String {
-        format!("{}{}",
+        let mut uci = format!("{}{}",
             coord_to_string(self.from).unwrap(),
             coord_to_string(self.to).unwrap()
-        )
+        );
+        if let MoveType::Promotion(pt) = self.move_type {
+            uci += pt.to_string().as_str();
+        }
+        uci
     }
 }
 
@@ -187,7 +194,10 @@ impl std::fmt::Display for Board {
         let mut board_str = String::from("\n");
         for row in self.board {
             for cell in row {
-                board_str += &format!("{} ", (match cell {Some(p) => p.to_string(), None => String::from(".")}));
+                board_str += (match cell {
+                    Some(p) => p.to_string(),
+                    None => String::from(".")
+                } + " ").as_str();
             }
             board_str += "\n";
         }
@@ -280,6 +290,10 @@ impl Board {
         }
     }
 
+    fn default() -> Self {
+        Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
+    }
+
     fn fen(&self) -> String {
         let board = (0..8).into_iter().map(|y| {
             let mut row = String::new();
@@ -304,13 +318,12 @@ impl Board {
 
         let side_to_move = if self.side_to_move {"w"} else {"b"};
 
-        let mut castling = format!("{}{}{}{}",
-            if self.allowed_castling.0 {"K"} else {""},
-            if self.allowed_castling.1 {"Q"} else {""},
-            if self.allowed_castling.2 {"k"} else {""},
-            if self.allowed_castling.3 {"q"} else {""},
-        );
-        if castling == "" { castling = "-".to_string(); }
+        let mut castling = String::with_capacity(4);
+        if self.allowed_castling.0 { castling.push('K'); }
+        if self.allowed_castling.1 { castling.push('Q'); }
+        if self.allowed_castling.2 { castling.push('k'); }
+        if self.allowed_castling.3 { castling.push('q'); }
+        if castling == "" { castling.push('-'); }
 
         let en_passant = match self.en_passant {
             Some(c) => coord_to_string(c).unwrap(),
@@ -325,10 +338,6 @@ impl Board {
             self.halfmove_count,
             self.fullmove_num
         )
-    }
-
-    fn default() -> Self {
-        Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
     }
 
     fn make_move(&mut self, mv: &Move) {
@@ -367,6 +376,11 @@ impl Board {
             Some(piece)
         };
         self.board[from_y][from_x] = None;
+
+        // En Passant
+        if mv.move_type == MoveType::EnPassant {
+            self.board[from_y][to_x] = None;
+        }
 
         // Castling
         if mv.move_type == MoveType::Castle {
@@ -434,6 +448,24 @@ impl Board {
         };
         self.board[to_y][to_x] = undo_data.captured;
 
+        if mv.move_type == MoveType::EnPassant {
+            self.board[from_y][to_x] = Some(Piece {
+                piece_type: PieceType::Pawn,
+                is_white: self.side_to_move
+            });
+        }
+
+        if mv.move_type == MoveType::Castle {
+            let (f_x, t_x) = match to_x {
+                6 => (7, 5),
+                2 => (0, 3),
+                _ => panic!("Error: invalid castle")
+            };
+            let extra_piece = self.board[to_y][t_x].unwrap();
+            self.board[from_y][f_x] = Some(extra_piece);
+            self.board[to_y][t_x] = None;
+        }
+
         // Update values from saved data
         self.allowed_castling = undo_data.allowed_castling;
         self.en_passant = undo_data.en_passant;
@@ -447,6 +479,12 @@ impl Board {
         self.side_to_move = !self.side_to_move;
     }
 
+    // fn undo_moves(&mut self, moves: Vec<&Move>) {
+    //     for mv in moves {
+    //         self.undo_move(mv);
+    //     }
+    // }
+
     fn square_is_color(&self, y: usize, x: usize, color: bool) -> bool {
         match self.board[y][x] {
             Some(piece) => piece.is_white == color,
@@ -457,28 +495,6 @@ impl Board {
     fn find_players_pieces<'a>(&'a self, color: bool) -> impl Iterator<Item = Coord> + 'a {
         (0..64).map(|i| (i / 8, i % 8))
         .filter(move |&(y, x)| self.square_is_color(y, x, color))
-    }
-
-    fn find_pieces<'a>(&'a self, piece: &'a Piece) -> impl Iterator<Item = Coord> + 'a { // Is it ok to give piece that 'a? I hope so...
-        (0..64).map(|i| (i / 8, i % 8)).filter(move |&(y, x)| {
-            match self.board[y][x] {
-                Some(p) => &p == piece,
-                None => false
-            }
-        })
-    }
-
-    fn find_piece(&self, piece: &Piece) -> Option<Coord> {
-        for y in 0..8 {
-            for x in 0..8 {
-                if let Some(p) = self.board[y][x] {
-                    if &p == piece {
-                        return Some((y, x));
-                    }
-                }
-            }
-        }
-        None
     }
 
     fn material(&self, color: bool) -> i32 {
@@ -642,10 +658,13 @@ impl Board {
     }
 
     fn king_is_attacked(&self, color: bool) -> bool {
-        let king = self.find_piece(&Piece {
-            piece_type: PieceType::King,
-            is_white: color
-        }).unwrap();
+        let king = (0..64).into_iter().map(|i| (i / 8, i % 8))
+        .find(|&(y, x)|
+            match self.board[y][x] {
+                Some(piece) => piece.piece_type == PieceType::King && piece.is_white == color,
+                None => false
+            }
+        ).unwrap();
 
         self.get_attacks(!color)
             .any(|mv| mv.to == king)
@@ -654,9 +673,14 @@ impl Board {
     fn get_legal_moves<'a>(&mut self) -> Vec<Move> {
         self.get_attacks(self.side_to_move).collect::<Vec<Move>>().into_iter()
         .filter(|mv| {
+            // println!("{:?}", mv);
+            // if mv.uci() == "h1g1" {
+            //     println!("{}", self);
+            // }
             self.make_move(mv);
             let is_legal = !self.king_is_attacked(!self.side_to_move);
             self.undo_move(mv);
+            // println!("undid");
             is_legal
         }).collect()
     }
@@ -664,58 +688,7 @@ impl Board {
     fn is_check(&self) -> bool {
         self.king_is_attacked(self.side_to_move)
     }
-
-    // fn is_checkmate(&self) -> bool {
-    //     self.is_check() && self.get_legal_moves().count() == 0
-    // }
-
-    // fn is_stalemate(&self) -> bool {
-    //     !self.is_check() && self.get_legal_moves().count() == 0
-    // }
 }
-
-
-// fn is_mate_in_n(board: &mut Board, depth: usize, my_move: bool) -> bool {
-//     let mut moves = board.get_legal_moves().into_iter();
-
-//     if my_move {
-//         moves.any(|mv| {
-//             board.make_move(&mv);
-//             let is_mate = is_mate_in_n(board, depth - 1, !my_move);
-//             board.undo_move(&mv);
-//             is_mate
-//         })
-//     } else {
-//         if depth == 0 {
-//             return moves.count() == 0 && board.king_is_attacked(board.side_to_move);
-//         }
-//         let mut no_moves = true;
-//         let res = moves.all(|mv| {
-//             no_moves = false;
-//             board.make_move(&mv);
-//             let is_mate = is_mate_in_n(board, depth, !my_move);
-//             board.undo_move(&mv);
-//             is_mate
-//         });
-//         if no_moves {
-//             res && board.king_is_attacked(board.side_to_move)
-//         } else {
-//             res
-//         }
-//     }
-// }
-
-// fn find_mate_within_n(board: &mut Board, max_depth: usize) -> Option<Move> {
-//     let moves: Vec<Move> = board.get_legal_moves();
-//     for mv in moves {
-//         board.make_move(&mv);
-//         if is_mate_in_n(board, max_depth - 1, false) {
-//             return Some(mv.clone());
-//         }
-//         board.undo_move(&mv);
-//     }
-//     None
-// }
 
 fn negamax(board: &mut Board, depth: usize, mut alpha: i32, beta: i32) -> i32 {
     if depth == 0 {
@@ -747,29 +720,35 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: i32, beta: i32) -> i32 {
     max
 }
 
-fn find_best_move(board: &mut Board, max_depth: usize) -> Move {
-    board.get_legal_moves().into_iter().map(|mv| {
+fn find_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
+    match board.get_legal_moves().into_iter().map(|mv| {
+        // println!("{}", mv.uci());
         board.make_move(&mv);
         let score = -negamax(board, max_depth - 1, -i32::MAX, i32::MAX);
         board.undo_move(&mv);
         (mv, score)
-    }).max_by(|(_, s1), (_, s2)| {s1.cmp(s2)}).unwrap().0
+    }).max_by(|(_, s1), (_, s2)| s1.cmp(s2)) {
+        Some((mv, _)) => Some(mv),
+        None => None
+    }
 }
 
-// fn find_mate_within_n(board: &Board, max_depth: usize) -> Option<Move> {
-//     // Iteratively-deepening depth-first search, slow
-//     let moves = board.get_legal_moves();
-//     for depth in 0..max_depth+1 {
-//         for mv in &moves {
-//             let mut test_board = board.clone();
-//             test_board.make_move(mv);
-//             if is_mate_in_n(&test_board, depth - 1, false) {
-//                 return Some(mv.clone());
-//             }
-//         }
-//     }
-//     None
-// }
+fn play_game(depth: usize) {
+    let mut board = Board::default();
+    loop {
+        match find_best_move(&mut board, depth) {
+            Some(mv) => {
+                println!("{}", mv.uci());
+                board.make_move(&mv);
+                println!("{}", board);
+            },
+            None => {
+                println!("ggs");
+                return;
+            }
+        }
+    }
+}
 
 fn get_input(msg: &str) -> String {
     println!("{}", msg);
@@ -781,29 +760,29 @@ fn get_input(msg: &str) -> String {
 }
 
 fn main() {
-    let fen = get_input("Input FEN:");
-    // let fen = "r4rk1/p7/2Q3p1/2Pp4/6p1/N1P4P/P4qPK/R4R2 b - - 0 1";
+    play_game(4); // Is it zobrist time?
+    // let fen = get_input("Input FEN:");
+    // // let fen = "1rb3k1/4b1pp/p3P3/1Np1q3/8/5Q2/PP3PPP/R5K1 w - - 0 1";
+    // // let fen = "rn5k/5Bp1/b1pp3P/p1q2P2/4N3/P1b2Q2/K4PP1/3R3R b - - 0 1";
 
-    let mut board = Board::from_fen(fen.as_str()).unwrap();
-    // let mut board = Board::default();
+    // let mut board = Board::from_fen(fen.as_str()).unwrap();
+    // // let mut board = Board::default();
 
-    println!("{}", board);
+    // println!("{}", board);
 
-    let depth = get_input("Search depth:");
-    let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
-    // let depth = 3;
+    // let depth = get_input("Search depth:");
+    // let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
+    // // let depth = 3;
 
-    let start = Instant::now();
+    // let start = Instant::now();
 
-    // let arb_mate = find_mate_within_n(&mut board, depth);
-    let best_move = find_best_move(&mut board, depth);
+    // let best_move = find_best_move(&mut board, depth);
 
-    println!("Time: {:?}", start.elapsed());
+    // println!("Time: {:?}", start.elapsed());
 
-    println!("{}", best_move.uci());
-
-    // match arb_mate {
+    // match best_move {
     //     Some(mv) => println!("{}", mv.uci()),
-    //     None => println!("No mate")
+    //     None => print!("No moves!")
     // }
+    
 }
