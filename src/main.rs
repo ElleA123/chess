@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{i32, time::Instant};
 
 const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 const N_STEPS: [(isize, isize); 8] = [(2, 1), (2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2), (-2, 1), (-2, -1)];
@@ -556,7 +556,7 @@ impl Board {
     fn get_king_moves(&self, y: usize, x: usize) -> Vec<Move> {
         let mut moves: Vec<Move> = self.get_linear_moves(y, x, &KQ_STEPS, true);
 
-        for castle in (0..4) {
+        for castle in 0..4 {
             if self.castling_is_ok(castle, y, x) {
                 moves.push(CASTLES[castle].clone());
             }
@@ -717,31 +717,40 @@ impl Board {
 //     None
 // }
 
-fn negamax(board: &mut Board, depth: usize) -> i32 {
+fn negamax(board: &mut Board, depth: usize, mut alpha: i32, beta: i32) -> i32 {
     if depth == 0 {
         return board.score();
     }
     let opts = board.get_legal_moves();
     if opts.len() == 0 {
         return if board.is_check() {
-            i32::MIN+1
+            -i32::MAX
         } else {
             0
         };
     }
-    let best = opts.into_iter().map(|mv| {
+    let mut max = -i32::MAX;
+    for mv in opts {
         board.make_move(&mv);
-        let score = -negamax(board, depth - 1);
+        let score = -negamax(board, depth - 1, -beta, -alpha);
         board.undo_move(&mv);
-        score
-    }).max().unwrap();
-    return best;
+        if score > max {
+            max = score;
+            if max > alpha {
+                alpha = score;
+                if alpha >= beta {
+                    break;
+                }
+            }
+        }
+    }
+    max
 }
 
 fn find_best_move(board: &mut Board, max_depth: usize) -> Move {
     board.get_legal_moves().into_iter().map(|mv| {
         board.make_move(&mv);
-        let score = -negamax(board, max_depth - 1);
+        let score = -negamax(board, max_depth - 1, -i32::MAX, i32::MAX);
         board.undo_move(&mv);
         (mv, score)
     }).max_by(|(_, s1), (_, s2)| {s1.cmp(s2)}).unwrap().0
