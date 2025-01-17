@@ -66,7 +66,7 @@ fn coord_to_string(coord: Coord) -> Option<String> {
 const WHITE: bool = true;
 const BLACK: bool = false;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 enum PieceType {
     Rook,
     Knight,
@@ -101,7 +101,7 @@ impl PieceType {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 struct Piece {
     piece_type: PieceType,
     is_white: bool
@@ -690,6 +690,7 @@ impl Board {
     }
 }
 
+
 fn negamax(board: &mut Board, depth: usize, mut alpha: i32, beta: i32) -> i32 {
     if depth == 0 {
         return board.score();
@@ -733,7 +734,7 @@ fn find_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
     }
 }
 
-fn play_game(depth: usize) {
+fn play_vs_self(depth: usize) {
     let mut board = Board::default();
     loop {
         match find_best_move(&mut board, depth) {
@@ -746,6 +747,10 @@ fn play_game(depth: usize) {
                 println!("ggs");
                 return;
             }
+        }
+        if board.halfmove_count >= 100 {
+            println!("ggs (50 move rule)");
+            return;
         }
     }
 }
@@ -760,29 +765,28 @@ fn get_input(msg: &str) -> String {
 }
 
 fn main() {
-    play_game(4); // Is it zobrist time?
-    // let fen = get_input("Input FEN:");
+    // play_vs_self(4);
+
+    let fen = get_input("Input FEN:");
     // // let fen = "1rb3k1/4b1pp/p3P3/1Np1q3/8/5Q2/PP3PPP/R5K1 w - - 0 1";
     // // let fen = "rn5k/5Bp1/b1pp3P/p1q2P2/4N3/P1b2Q2/K4PP1/3R3R b - - 0 1";
 
-    // let mut board = Board::from_fen(fen.as_str()).unwrap();
+    let mut board = Board::from_fen(fen.as_str()).unwrap();
     // // let mut board = Board::default();
 
     // println!("{}", board);
 
-    // let depth = get_input("Search depth:");
-    // let Ok(depth) = depth.parse::<usize>() else { panic!("Error: not a natural number"); };
+    let Ok(depth) = get_input("Search depth:")
+        .parse::<usize>() else { panic!("Error: not a natural number"); };
     // // let depth = 3;
 
-    // let start = Instant::now();
+    let start = Instant::now();
+    let best_move = find_best_move(&mut board, depth);
+    println!("Time: {:?}", start.elapsed());
 
-    // let best_move = find_best_move(&mut board, depth);
-
-    // println!("Time: {:?}", start.elapsed());
-
-    // match best_move {
-    //     Some(mv) => println!("{}", mv.uci()),
-    //     None => print!("No moves!")
-    // }
+    match best_move {
+        Some(mv) => println!("{}", mv.uci()),
+        None => print!("No moves!")
+    }
     
 }
