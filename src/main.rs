@@ -65,12 +65,12 @@ const BLACK: bool = false;
 
 #[derive(Clone, Copy, PartialEq, Debug, Eq, PartialOrd, Ord)]
 enum PieceType {
-    Pawn,
-    King,
-    Bishop,
-    Knight,
     Rook,
-    Queen
+    Knight,
+    Bishop,
+    Queen,
+    King,
+    Pawn
 }
 
 impl PieceType {
@@ -481,6 +481,28 @@ impl Board {
         None
     }
 
+    fn material(&self, color: bool) -> i32 {
+        (0..64).map(|i| (i / 8, i % 8))
+        .map(|(y, x)| {
+            if self.square_is_color(y, x, color) {
+                match self.board[y][x].unwrap().piece_type {
+                    PieceType::Rook => 5,
+                    PieceType::Knight => 3,
+                    PieceType::Bishop => 3,
+                    PieceType::Queen => 9,
+                    PieceType::King => 0,
+                    PieceType::Pawn => 1
+                }
+            } else {
+                0
+            }
+        }).sum::<i32>()
+    }
+
+    fn score(&self) -> i32 {
+        self.material(self.side_to_move) - self.material(!self.side_to_move)
+    }
+
     fn get_linear_moves(&self, y: usize, x: usize, step_list: &[(isize, isize)], one_step_only: bool) -> Vec<Move> {
         let color = self.board[y][x].unwrap().is_white;
         let mut moves = Vec::new();
@@ -653,46 +675,76 @@ impl Board {
 }
 
 
-fn is_mate_in_n(board: &mut Board, depth: usize, my_move: bool) -> bool {
-    let mut moves = board.get_legal_moves().into_iter();
+// fn is_mate_in_n(board: &mut Board, depth: usize, my_move: bool) -> bool {
+//     let mut moves = board.get_legal_moves().into_iter();
 
-    if my_move {
-        moves.any(|mv| {
-            board.make_move(&mv);
-            let is_mate = is_mate_in_n(board, depth - 1, !my_move);
-            board.undo_move(&mv);
-            is_mate
-        })
-    } else {
-        if depth == 0 {
-            return moves.count() == 0 && board.king_is_attacked(board.side_to_move);
-        }
-        let mut no_moves = true;
-        let res = moves.all(|mv| {
-            no_moves = false;
-            board.make_move(&mv);
-            let is_mate = is_mate_in_n(board, depth, !my_move);
-            board.undo_move(&mv);
-            is_mate
-        });
-        if no_moves {
-            res && board.king_is_attacked(board.side_to_move)
-        } else {
-            res
-        }
+//     if my_move {
+//         moves.any(|mv| {
+//             board.make_move(&mv);
+//             let is_mate = is_mate_in_n(board, depth - 1, !my_move);
+//             board.undo_move(&mv);
+//             is_mate
+//         })
+//     } else {
+//         if depth == 0 {
+//             return moves.count() == 0 && board.king_is_attacked(board.side_to_move);
+//         }
+//         let mut no_moves = true;
+//         let res = moves.all(|mv| {
+//             no_moves = false;
+//             board.make_move(&mv);
+//             let is_mate = is_mate_in_n(board, depth, !my_move);
+//             board.undo_move(&mv);
+//             is_mate
+//         });
+//         if no_moves {
+//             res && board.king_is_attacked(board.side_to_move)
+//         } else {
+//             res
+//         }
+//     }
+// }
+
+// fn find_mate_within_n(board: &mut Board, max_depth: usize) -> Option<Move> {
+//     let moves: Vec<Move> = board.get_legal_moves();
+//     for mv in moves {
+//         board.make_move(&mv);
+//         if is_mate_in_n(board, max_depth - 1, false) {
+//             return Some(mv.clone());
+//         }
+//         board.undo_move(&mv);
+//     }
+//     None
+// }
+
+fn negamax(board: &mut Board, depth: usize) -> i32 {
+    if depth == 0 {
+        return board.score();
     }
+    let opts = board.get_legal_moves();
+    if opts.len() == 0 {
+        return if board.is_check() {
+            i32::MIN+1
+        } else {
+            0
+        };
+    }
+    let best = opts.into_iter().map(|mv| {
+        board.make_move(&mv);
+        let score = -negamax(board, depth - 1);
+        board.undo_move(&mv);
+        score
+    }).max().unwrap();
+    return best;
 }
 
-fn find_mate_within_n(board: &mut Board, max_depth: usize) -> Option<Move> {
-    let moves: Vec<Move> = board.get_legal_moves();
-    for mv in moves {
+fn find_best_move(board: &mut Board, max_depth: usize) -> Move {
+    board.get_legal_moves().into_iter().map(|mv| {
         board.make_move(&mv);
-        if is_mate_in_n(board, max_depth - 1, false) {
-            return Some(mv.clone());
-        }
+        let score = -negamax(board, max_depth - 1);
         board.undo_move(&mv);
-    }
-    None
+        (mv, score)
+    }).max_by(|(_, s1), (_, s2)| {s1.cmp(s2)}).unwrap().0
 }
 
 // fn find_mate_within_n(board: &Board, max_depth: usize) -> Option<Move> {
@@ -734,12 +786,15 @@ fn main() {
 
     let start = Instant::now();
 
-    let arb_mate = find_mate_within_n(&mut board, depth);
+    // let arb_mate = find_mate_within_n(&mut board, depth);
+    let best_move = find_best_move(&mut board, depth);
 
     println!("Time: {:?}", start.elapsed());
 
-    match arb_mate {
-        Some(mv) => println!("{}", mv.uci()),
-        None => println!("No mate")
-    }
+    println!("{}", best_move.uci());
+
+    // match arb_mate {
+    //     Some(mv) => println!("{}", mv.uci()),
+    //     None => println!("No mate")
+    // }
 }
