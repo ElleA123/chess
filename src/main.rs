@@ -1,7 +1,4 @@
-use std::{
-    i32,
-    time::Instant
-};
+use std::time::Instant;
 
 const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 const N_STEPS: [(isize, isize); 8] = [(2, 1), (2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2), (-2, 1), (-2, -1)];
@@ -497,25 +494,25 @@ impl Board {
         .filter(move |&(y, x)| self.square_is_color(y, x, color))
     }
 
-    fn material(&self, color: bool) -> i32 {
+    fn material(&self, color: bool) -> f64 {
         (0..64).map(|i| (i / 8, i % 8))
         .map(|(y, x)| {
             if self.square_is_color(y, x, color) {
                 match self.board[y][x].unwrap().piece_type {
-                    PieceType::Rook => 5,
-                    PieceType::Knight => 3,
-                    PieceType::Bishop => 3,
-                    PieceType::Queen => 9,
-                    PieceType::King => 0,
-                    PieceType::Pawn => 1
+                    PieceType::Rook => 5.0,
+                    PieceType::Knight => 3.0,
+                    PieceType::Bishop => 3.0,
+                    PieceType::Queen => 9.0,
+                    PieceType::King => 0.0,
+                    PieceType::Pawn => 1.0
                 }
             } else {
-                0
+                0.0
             }
-        }).sum::<i32>()
+        }).sum::<f64>()
     }
 
-    fn score(&self) -> i32 {
+    fn score(&self) -> f64 {
         self.material(self.side_to_move) - self.material(!self.side_to_move)
     }
 
@@ -691,19 +688,19 @@ impl Board {
 }
 
 
-fn negamax(board: &mut Board, depth: usize, mut alpha: i32, beta: i32) -> i32 {
+fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     if depth == 0 {
         return board.score();
     }
     let opts = board.get_legal_moves();
     if opts.len() == 0 {
         return if board.is_check() {
-            -i32::MAX
+            f64::MIN
         } else {
-            0
+            0.0
         };
     }
-    let mut max = -i32::MAX;
+    let mut max = f64::MIN;
     for mv in opts {
         board.make_move(&mv);
         let score = -negamax(board, depth - 1, -beta, -alpha);
@@ -721,15 +718,15 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: i32, beta: i32) -> i32 {
     max
 }
 
-fn find_best_move(board: &mut Board, max_depth: usize, window: i32) -> Option<Move> {
+fn find_best_move(board: &mut Board, max_depth: usize, window: f64) -> Option<Move> {
     let top_score = board.score();
     let mut best_move = None;
-    let mut best_score = -i32::MAX;
+    let mut best_score = f64::MIN;
     for mv in board.get_legal_moves() {
         board.make_move(&mv);
         let score = -negamax(board, max_depth - 1, top_score - window, top_score + window);
         board.undo_move(&mv);
-        if score == i32::MAX {
+        if score == f64::MAX {
             return Some(mv);
         }
         if score > best_score {
@@ -743,7 +740,7 @@ fn find_best_move(board: &mut Board, max_depth: usize, window: i32) -> Option<Mo
 fn play_vs_self(depth: usize) {
     let mut board = Board::default();
     loop {
-        match find_best_move(&mut board, depth, i32::MAX) {
+        match find_best_move(&mut board, depth, f64::MAX) {
             Some(mv) => {
                 println!("{}", mv.uci());
                 board.make_move(&mv);
@@ -778,9 +775,12 @@ fn best_move_of_input() {
     let Ok(depth) = get_input("Search depth:")
         .parse::<usize>() else { panic!("Error: not a natural number"); };
 
+    let Ok(window) = get_input("Search window:")
+        .parse::<f64>() else { panic!("Error: not a natural number"); };
+
     let start = Instant::now();
 
-    let best_move = find_best_move(&mut board, depth, 3);
+    let best_move = find_best_move(&mut board, depth, window);
 
     println!("Time: {:?}", start.elapsed());
 
