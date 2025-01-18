@@ -101,7 +101,7 @@ impl PieceType {
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 struct Piece {
     piece_type: PieceType,
-    is_white: bool
+    color: bool
 }
 
 impl Piece {
@@ -109,7 +109,7 @@ impl Piece {
         if let Some(piece_type) = PieceType::from_char(c) {
             Some(Piece {
                 piece_type,
-                is_white: c.is_ascii_uppercase()
+                color: c.is_ascii_uppercase()
             })
         } else {
             None
@@ -117,7 +117,7 @@ impl Piece {
     }
 
     fn to_string(&self) -> String {
-        if self.is_white {
+        if self.color {
             self.piece_type.to_string().to_ascii_uppercase()
         } else {
             self.piece_type.to_string()
@@ -367,7 +367,7 @@ impl Board {
         self.board[to_y][to_x] = if let MoveType::Promotion(pt) = mv.move_type {
             Some(Piece {
                 piece_type: pt,
-                is_white: piece.is_white,
+                color: piece.color,
             })
         } else {
             Some(piece)
@@ -410,7 +410,7 @@ impl Board {
 
         // Update en passant square
         if piece.piece_type == PieceType::Pawn && (if to_y > from_y {to_y - from_y == 2} else {from_y - to_y == 2}) {
-            self.en_passant = Some(((to_y as isize - {if piece.is_white {-1} else {1}}) as usize, to_x));
+            self.en_passant = Some(((to_y as isize - {if piece.color {-1} else {1}}) as usize, to_x));
         } else {
             self.en_passant = None;
         }
@@ -438,7 +438,7 @@ impl Board {
         self.board[from_y][from_x] = if let MoveType::Promotion(_) = mv.move_type {
             Some(Piece {
                 piece_type: PieceType::Pawn,
-                is_white: piece.is_white
+                color: piece.color
             })
         } else {
             Some(piece)
@@ -448,7 +448,7 @@ impl Board {
         if mv.move_type == MoveType::EnPassant {
             self.board[from_y][to_x] = Some(Piece {
                 piece_type: PieceType::Pawn,
-                is_white: self.side_to_move
+                color: self.side_to_move
             });
         }
 
@@ -484,9 +484,20 @@ impl Board {
 
     fn square_is_color(&self, y: usize, x: usize, color: bool) -> bool {
         match self.board[y][x] {
-            Some(piece) => piece.is_white == color,
+            Some(piece) => piece.color == color,
             None => false
         }
+    }
+
+    fn square_is_piece_type(&self, y: usize, x: usize, piece_type: PieceType) -> bool {
+        match self.board[y][x] {
+            Some(piece) => piece.piece_type == piece_type,
+            None => false
+        }
+    }
+
+    fn square_is_piece(&self, y: usize, x: usize, color: bool, piece_type: PieceType) -> bool {
+        self.square_is_color(y, x, color) && self.square_is_piece_type(y, x, piece_type)
     }
 
     fn find_players_pieces<'a>(&'a self, color: bool) -> impl Iterator<Item = Coord> + 'a {
@@ -494,30 +505,8 @@ impl Board {
         .filter(move |&(y, x)| self.square_is_color(y, x, color))
     }
 
-    fn material(&self, color: bool) -> f64 {
-        (0..64).map(|i| (i / 8, i % 8))
-        .map(|(y, x)| {
-            if self.square_is_color(y, x, color) {
-                match self.board[y][x].unwrap().piece_type {
-                    PieceType::Rook => 5.0,
-                    PieceType::Knight => 3.0,
-                    PieceType::Bishop => 3.0,
-                    PieceType::Queen => 9.0,
-                    PieceType::King => 0.0,
-                    PieceType::Pawn => 1.0
-                }
-            } else {
-                0.0
-            }
-        }).sum::<f64>()
-    }
-
-    fn score(&self) -> f64 {
-        self.material(self.side_to_move) - self.material(!self.side_to_move)
-    }
-
     fn get_linear_moves(&self, y: usize, x: usize, step_list: &[(isize, isize)], one_step_only: bool) -> Vec<Move> {
-        let color = self.board[y][x].unwrap().is_white;
+        let color = self.board[y][x].unwrap().color;
         let mut moves = Vec::new();
         for (step_y, step_x) in step_list {
             let mut test_y = (y as isize + step_y) as usize;
@@ -578,7 +567,7 @@ impl Board {
     }
 
     fn get_pawn_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        let color = self.board[y][x].unwrap().is_white;
+        let color = self.board[y][x].unwrap().color;
         let pawn_dir = if color {-1} else {1};
         let will_promote = (y as isize + pawn_dir) == {if color {0} else {7}};
         let mut moves = Vec::new();
@@ -658,7 +647,7 @@ impl Board {
         let king = (0..64).into_iter().map(|i| (i / 8, i % 8))
         .find(|&(y, x)|
             match self.board[y][x] {
-                Some(piece) => piece.piece_type == PieceType::King && piece.is_white == color,
+                Some(piece) => piece.piece_type == PieceType::King && piece.color == color,
                 None => false
             }
         ).unwrap();
@@ -683,10 +672,41 @@ impl Board {
 }
 
 
+fn score_side(board: &Board, color: bool) -> f64 {
+    let mut score = (0..64).map(|i| (i / 8, i % 8))
+    .map(|(y, x)| {
+        if board.square_is_color(y, x, color) {
+            match board.board[y][x].unwrap().piece_type {
+                PieceType::Rook => 5000.0,
+                PieceType::Knight => 3000.0,
+                PieceType::Bishop => 3000.0,
+                PieceType::Queen => 9000.0,
+                PieceType::King => 0.0,
+                PieceType::Pawn => 1000.0
+            }
+        } else {
+            0.0
+        }
+    }).sum::<f64>();
+
+    for x in 0..8 {
+        let num_pawns = (0..8).into_iter().filter(|&y| {
+            board.square_is_piece(y, x, color, PieceType::Pawn)
+        }).count();
+        if num_pawns > 1 {
+            score -= (num_pawns * 20) as f64;
+        }
+    }
+    score
+}
+
+fn score_board(board: &Board) -> f64 {
+    score_side(board, board.side_to_move) - score_side(board, !board.side_to_move)
+}
+
 fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
-    // println!("{}\n{}", board, depth);
     if depth == 0 {
-        return board.score();
+        return score_board(board);
     }
     let opts = board.get_legal_moves();
     if opts.len() == 0 {
@@ -701,7 +721,6 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
         board.make_move(&mv);
         let score = -negamax(board, depth - 1, -2.0 * beta, -2.0 * alpha) * 0.5;
         board.undo_move(&mv);
-        // println!("{}: {}", mv.uci(), score);
         if score > max {
             max = score;
             if max > alpha {
