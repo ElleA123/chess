@@ -670,14 +670,9 @@ impl Board {
     fn get_legal_moves<'a>(&mut self) -> Vec<Move> {
         self.get_attacks(self.side_to_move).collect::<Vec<Move>>().into_iter()
         .filter(|mv| {
-            // println!("{:?}", mv);
-            // if mv.uci() == "h1g1" {
-            //     println!("{}", self);
-            // }
             self.make_move(mv);
             let is_legal = !self.king_is_attacked(!self.side_to_move);
             self.undo_move(mv);
-            // println!("undid");
             is_legal
         }).collect()
     }
@@ -695,12 +690,12 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     let opts = board.get_legal_moves();
     if opts.len() == 0 {
         return if board.is_check() {
-            f64::MIN
+            f64::NEG_INFINITY
         } else {
             0.0
         };
     }
-    let mut max = f64::MIN;
+    let mut max = f64::NEG_INFINITY;
     for mv in opts {
         board.make_move(&mv);
         let score = -negamax(board, depth - 1, -beta, -alpha);
@@ -721,12 +716,12 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
 fn find_best_move(board: &mut Board, max_depth: usize, window: f64) -> Option<Move> {
     let top_score = board.score();
     let mut best_move = None;
-    let mut best_score = f64::MIN;
+    let mut best_score = f64::NEG_INFINITY;
     for mv in board.get_legal_moves() {
         board.make_move(&mv);
         let score = -negamax(board, max_depth - 1, top_score - window, top_score + window);
         board.undo_move(&mv);
-        if score == f64::MAX {
+        if score == f64::INFINITY {
             return Some(mv);
         }
         if score > best_score {
@@ -740,7 +735,7 @@ fn find_best_move(board: &mut Board, max_depth: usize, window: f64) -> Option<Mo
 fn play_vs_self(depth: usize) {
     let mut board = Board::default();
     loop {
-        match find_best_move(&mut board, depth, f64::MAX) {
+        match find_best_move(&mut board, depth, f64::INFINITY) {
             Some(mv) => {
                 println!("{}", mv.uci());
                 board.make_move(&mv);
@@ -774,9 +769,10 @@ fn best_move_of_input() {
 
     let Ok(depth) = get_input("Search depth:")
         .parse::<usize>() else { panic!("Error: not a natural number"); };
+    if depth == 0 { panic!("Not zero idiot"); }
 
     let Ok(window) = get_input("Search window:")
-        .parse::<f64>() else { panic!("Error: not a natural number"); };
+        .parse::<f64>() else { panic!("Error: not an f64"); };
 
     let start = Instant::now();
 
