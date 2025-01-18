@@ -684,22 +684,24 @@ impl Board {
 
 
 fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
+    // println!("{}\n{}", board, depth);
     if depth == 0 {
         return board.score();
     }
     let opts = board.get_legal_moves();
     if opts.len() == 0 {
         return if board.is_check() {
-            f64::NEG_INFINITY
+            f64::MIN
         } else {
             0.0
         };
     }
-    let mut max = f64::NEG_INFINITY;
+    let mut max = f64::MIN;
     for mv in opts {
         board.make_move(&mv);
-        let score = -negamax(board, depth - 1, -beta, -alpha);
+        let score = -negamax(board, depth - 1, -2.0 * beta, -2.0 * alpha) * 0.5;
         board.undo_move(&mv);
+        // println!("{}: {}", mv.uci(), score);
         if score > max {
             max = score;
             if max > alpha {
@@ -714,14 +716,13 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
 }
 
 fn find_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
-    let current_score = board.score();
     let mut best_move = None;
-    let mut best_score = f64::NEG_INFINITY;
+    let mut best_score = f64::MIN;
     for mv in board.get_legal_moves() {
         board.make_move(&mv);
-        let score = -negamax(board, max_depth - 1, f64::NEG_INFINITY, f64::INFINITY);
+        let score = -negamax(board, max_depth - 1, f64::MIN, f64::MAX);
         board.undo_move(&mv);
-        if score == f64::INFINITY {
+        if score == f64::MAX {
             return Some(mv);
         }
         if score > best_score {
