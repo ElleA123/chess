@@ -1,124 +1,19 @@
-pub mod coord;
-pub mod board;
+pub mod piece; // pub mod PIECE...
+pub mod coord; // pub mod COORD...
+pub mod mv; // pub mod MOVE...
+pub mod board; // pub mod BOARD!!!
+
+use crate::piece::{Piece, PieceType};
 use crate::board::Board;
 use crate::coord::Coord;
+use crate::mv::Move;
 
 use std::time::Instant;
 
-const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum PieceType {
-    Rook,
-    Knight,
-    Bishop,
-    Queen,
-    King,
-    Pawn
-}
-
-impl PieceType {
-    fn from_char(c: char) -> Option<Self> {
-        match c.to_ascii_lowercase() {
-            'r' => Some(PieceType::Rook),
-            'n' => Some(PieceType::Knight),
-            'b' => Some(PieceType::Bishop),
-            'q' => Some(PieceType::Queen),
-            'k' => Some(PieceType::King),
-            'p' => Some(PieceType::Pawn),
-            _ => None
-        }
-    }
-
-    fn to_string(&self) -> String {
-        String::from(match self {
-            &PieceType::Rook => 'r',
-            &PieceType::Knight => 'n',
-            &PieceType::Bishop => 'b',
-            &PieceType::Queen => 'q',
-            &PieceType::King => 'k',
-            &PieceType::Pawn => 'p',
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Piece {
-    piece_type: PieceType,
-    color: bool
-}
-
-impl Piece {
-    fn from_char(c: char) -> Option<Self> {
-        if let Some(piece_type) = PieceType::from_char(c) {
-            Some(Piece {
-                piece_type,
-                color: c.is_ascii_uppercase()
-            })
-        } else {
-            None
-        }
-    }
-
-    fn to_string(&self) -> String {
-        if self.color {
-            self.piece_type.to_string().to_ascii_uppercase()
-        } else {
-            self.piece_type.to_string()
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum MoveType {
-    Basic,
-    EnPassant,
-    Castle,
-    Promotion(PieceType)
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct Move {
-    from: Coord,
-    to: Coord,
-    move_type: MoveType
-}
-
-impl Move {
-    fn new(from: Coord, to: Coord, move_type: MoveType) -> Self {
-        Move {
-            from,
-            to,
-            move_type
-        }
-    }
-
-    fn promotions(from: Coord, to: Coord) -> impl Iterator<Item = Self> {
-        PROMOTABLES.iter().map(move |&pt| Move {
-            from,
-            to,
-            move_type: MoveType::Promotion(pt)
-        })
-    }
-
-    fn uci(&self) -> String {
-        let mut uci = format!("{}{}",
-            self.from.to_string(),
-            self.to.to_string()
-        );
-        if let MoveType::Promotion(pt) = self.move_type {
-            uci += pt.to_string().as_str();
-        }
-        uci
-    }
-}
-
-
 fn score_side(board: &Board, color: bool) -> f64 {
-    let mut score = (0..64).map(|i| (i / 8, i % 8))
-    .map(|(y, x)| {
-        if board.square_is_color(y, x, color) {
-            match board.get_square(y, x).unwrap().piece_type {
+    let mut score = Coord::all().map(|c| {
+        if board.square_is_color(c, color) {
+            match board.get_square(c).unwrap().piece_type {
                 PieceType::Rook => 5000.0,
                 PieceType::Knight => 3000.0,
                 PieceType::Bishop => 3000.0,
@@ -132,8 +27,8 @@ fn score_side(board: &Board, color: bool) -> f64 {
     }).sum::<f64>();
 
     for x in 0..8 {
-        let num_pawns = (0..8).into_iter().filter(|&y| {
-            board.square_is_piece(y, x, color, PieceType::Pawn)
+        let num_pawns = Coord::file(x).filter(|&c| {
+            board.square_is_piece(c, color, PieceType::Pawn)
         }).count();
         if num_pawns > 1 {
             score -= (num_pawns * 20) as f64;

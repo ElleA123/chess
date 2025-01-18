@@ -1,5 +1,6 @@
-use crate::{Move, MoveType, Piece, PieceType};
-use crate::coord::{Coord, is_on_board};
+use crate::{Piece, PieceType};
+use crate::mv::{Move, MoveType, CASTLES};
+use crate::coord::Coord;
 
 struct UndoData {
     captured: Option<Piece>,
@@ -25,29 +26,6 @@ const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 const N_STEPS: [(isize, isize); 8] = [(2, 1), (2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2), (-2, 1), (-2, -1)];
 const B_STEPS: [(isize, isize); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
 const KQ_STEPS: [(isize, isize); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
-
-const CASTLES: [Move; 4] = [
-    Move {
-        from: Coord::from(7, 4),
-        to: Coord::from(7, 6),
-        move_type: MoveType::Castle
-    },
-    Move {
-        from: Coord::from(7, 4),
-        to: Coord::from(7, 2),
-        move_type: MoveType::Castle
-    },
-    Move {
-        from: Coord::from(0, 4),
-        to: Coord::from(0, 6),
-        move_type: MoveType::Castle
-    },
-    Move {
-        from: Coord::from(0, 4),
-        to: Coord::from(0, 2),
-        move_type: MoveType::Castle
-    }
-];
 
 impl std::fmt::Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -198,13 +176,13 @@ impl Board {
 
     pub fn make_move(&mut self, mv: &Move) {
         // Only legal moves should make it to this function
-        let (from_y, from_x) = mv.from.tup();
-        let (to_y, to_x) = mv.to.tup();
+        let (from_y, from_x) = mv.from().tup();
+        let (to_y, to_x) = mv.to().tup();
         let piece = self.board[from_y][from_x].unwrap();
 
         let (captured, is_capture) = match self.board[to_y][to_x] {
             Some(p) => (Some(p), true),
-            None => (None, mv.move_type == MoveType::EnPassant)
+            None => (None, mv.move_type() == MoveType::EnPassant)
         };
 
         // Add data to undo this move
@@ -223,7 +201,7 @@ impl Board {
         }
 
         // Make the swap
-        self.board[to_y][to_x] = if let MoveType::Promotion(pt) = mv.move_type {
+        self.board[to_y][to_x] = if let MoveType::Promotion(pt) = mv.move_type() {
             Some(Piece {
                 piece_type: pt,
                 color: piece.color,
@@ -234,12 +212,12 @@ impl Board {
         self.board[from_y][from_x] = None;
 
         // En Passant
-        if mv.move_type == MoveType::EnPassant {
+        if mv.move_type() == MoveType::EnPassant {
             self.board[from_y][to_x] = None;
         }
 
         // Castling
-        if mv.move_type == MoveType::Castle {
+        if mv.move_type() == MoveType::Castle {
             let (f_x, t_x) = match to_x {
                 6 => (7, 5),
                 2 => (0, 3),
@@ -289,12 +267,12 @@ impl Board {
     pub fn undo_move(&mut self, mv: &Move) {
         let Some(undo_data) = self.undo_stack.pop() else {return};
 
-        let (from_y, from_x) = mv.from.tup();
-        let (to_y, to_x) = mv.to.tup();
+        let (from_y, from_x) = mv.from().tup();
+        let (to_y, to_x) = mv.to().tup();
         let piece = self.board[to_y][to_x].unwrap();
 
         // Swap
-        self.board[from_y][from_x] = if let MoveType::Promotion(_) = mv.move_type {
+        self.board[from_y][from_x] = if let MoveType::Promotion(_) = mv.move_type() {
             Some(Piece {
                 piece_type: PieceType::Pawn,
                 color: piece.color
@@ -304,14 +282,14 @@ impl Board {
         };
         self.board[to_y][to_x] = undo_data.captured;
 
-        if mv.move_type == MoveType::EnPassant {
+        if mv.move_type() == MoveType::EnPassant {
             self.board[from_y][to_x] = Some(Piece {
                 piece_type: PieceType::Pawn,
                 color: self.side_to_move
             });
         }
 
-        if mv.move_type == MoveType::Castle {
+        if mv.move_type() == MoveType::Castle {
             let (f_x, t_x) = match to_x {
                 6 => (7, 5),
                 2 => (0, 3),
@@ -351,16 +329,14 @@ impl Board {
     }
 
     pub fn square_is_color(&self, coord: Coord, color: bool) -> bool {
-        let (y, x) = coord.tup();
-        match self.board[y][x] {
+        match self.get_square(coord) {
             Some(piece) => piece.color == color,
             None => false
         }
     }
 
     pub fn square_is_piece_type(&self, coord: Coord, piece_type: PieceType) -> bool {
-        let (y, x) = coord.tup();
-        match self.board[y][x] {
+        match self.get_square(coord) {
             Some(piece) => piece.piece_type == piece_type,
             None => false
         }
@@ -375,24 +351,47 @@ impl Board {
         .filter(move |&c| self.square_is_color(c, color))
     }
 
-    fn get_linear_moves(&self, y: usize, x: usize, step_list: &[(isize, isize)], one_step_only: bool) -> Vec<Move> {
-        let color = self.board[y][x].unwrap().color;
+    // fn get_linear_moves(&self, coord: Coord, step_list: &[(isize, isize)], one_step_only: bool) -> Vec<Move> {
+    //     let color = self.get_square(coord).unwrap().color;
+    //     let mut moves = Vec::new();
+    //     for (step_y, step_x) in step_list {
+    //         let mut test_y = (y as isize + step_y) as usize;
+    //         let mut test_x = (x as isize + step_x) as usize;
+    //         while is_on_board(test_y, test_x) {
+    //             if !self.square_is_color(test_y, test_x, color) {
+    //                 moves.push(Move::new(Coord::from(y, x), Coord::from(test_y, test_x), MoveType::Basic));
+    //                 if self.square_is_color(test_y, test_x, !color) {
+    //                     break;
+    //                 }
+    //             } else {
+    //                 break;
+    //             }
+                
+    //             test_y = (test_y as isize + step_y) as usize;
+    //             test_x = (test_x as isize + step_x) as usize;
+
+    //             if one_step_only {
+    //                 break;
+    //             }
+    //         }
+    //     }
+    //     moves
+    // }
+
+    fn get_linear_moves(&self, coord: Coord, step_list: &[(isize, isize)], one_step_only: bool) -> Vec<Move> {
+        let color = self.get_square(coord).unwrap().color;
         let mut moves = Vec::new();
-        for (step_y, step_x) in step_list {
-            let mut test_y = (y as isize + step_y) as usize;
-            let mut test_x = (x as isize + step_x) as usize;
-            while is_on_board(test_y, test_x) {
-                if !self.square_is_color(test_y, test_x, color) {
-                    moves.push(Move::new(Coord::from(y, x), Coord::from(test_y, test_x), MoveType::Basic));
-                    if self.square_is_color(test_y, test_x, !color) {
+        for step in step_list {
+            let mut test_coord = coord;
+            while test_coord.add_mut(step) {
+                if !self.square_is_color(test_coord, color) {
+                    moves.push(Move::new(coord, test_coord, MoveType::Basic));
+                    if self.square_is_color(test_coord, !color) {
                         break;
                     }
                 } else {
                     break;
                 }
-                
-                test_y = (test_y as isize + step_y) as usize;
-                test_x = (test_x as isize + step_x) as usize;
 
                 if one_step_only {
                     break;
@@ -402,41 +401,40 @@ impl Board {
         moves
     }
 
-    fn get_rook_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(y, x, &R_STEPS, false)
+    fn get_rook_moves(&self, coord: Coord) -> Vec<Move> {
+        self.get_linear_moves(coord, &R_STEPS, false)
     }
-    fn get_knight_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(y, x, &N_STEPS, true)
+    fn get_knight_moves(&self, coord: Coord) -> Vec<Move> {
+        self.get_linear_moves(coord, &N_STEPS, true)
     }
-    fn get_bishop_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(y, x, &B_STEPS, false)
+    fn get_bishop_moves(&self, coord: Coord) -> Vec<Move> {
+        self.get_linear_moves(coord, &B_STEPS, false)
     }
-    fn get_queen_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        self.get_linear_moves(y, x, &KQ_STEPS, false)
-    }
-    fn castling_is_ok(&self, castle: usize, y: usize, x: usize) -> bool {
-        let (req_y, allowed, empty) = match castle {
-            0 => (7, self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
-            1 => (7, self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)]),
-            2 => (0, self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)]),
-            3 => (0, self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)]),
-            x => panic!("castling_is_ok: illegal `castle` arg: {}", x)
-        };
-        y == req_y && x == 4 && allowed && empty.into_iter().all(|(y, x)| self.board[y][x].is_none())
+    fn get_queen_moves(&self, coord: Coord) -> Vec<Move> {
+        self.get_linear_moves(coord, &KQ_STEPS, false)
     }
 
-    fn get_king_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        let mut moves: Vec<Move> = self.get_linear_moves(y, x, &KQ_STEPS, true);
+    fn get_king_moves(&self, coord: Coord) -> Vec<Move> {
+        let mut moves: Vec<Move> = self.get_linear_moves(coord, &KQ_STEPS, true);
 
         for castle in 0..4 {
-            if self.castling_is_ok(castle, y, x) {
+            let (req_y, allowed, empty) = match castle {
+                0 => (7, self.allowed_castling.0, [(7, 5), (7, 5), (7, 6)]), // duplicate items to line up sizes :skull:
+                1 => (7, self.allowed_castling.1, [(7, 1), (7, 2), (7, 3)]),
+                2 => (0, self.allowed_castling.2, [(0, 5), (0, 5), (0, 6)]),
+                3 => (0, self.allowed_castling.3, [(0, 1), (0, 2), (0, 3)]),
+                x => panic!("castling_is_ok: illegal `castle` arg: {}", x)
+            };
+
+            if coord == (req_y, 4) && allowed && empty.into_iter().all(|(y, x)| self.board[y][x].is_none()) {
                 moves.push(CASTLES[castle].clone());
             }
         }
         moves
     }
 
-    fn get_pawn_moves(&self, y: usize, x: usize) -> Vec<Move> {
+    fn get_pawn_moves(&self, coord: Coord) -> Vec<Move> {
+        let (y, x) = coord.tup();
         let color = self.board[y][x].unwrap().color;
         let pawn_dir = if color {-1} else {1};
         let will_promote = (y as isize + pawn_dir) == {if color {0} else {7}};
@@ -459,7 +457,7 @@ impl Board {
 
         if x != 0 {
             // Capture left
-            if self.square_is_color((y as isize + pawn_dir) as usize, x - 1, !color) {
+            if self.square_is_color(Coord::from((y as isize + pawn_dir) as usize, x - 1), !color) {
                 if will_promote {
                     // Capture left and promote
                     moves.extend(Move::promotions(Coord::from(y, x), Coord::from((y as isize + pawn_dir) as usize, x - 1)));
@@ -469,7 +467,7 @@ impl Board {
                 }
                 // En passant left
                 if let Some(sq) = self.en_passant {
-                    if sq.tup() == ((y as isize + pawn_dir) as usize, x - 1) {
+                    if sq == ((y as isize + pawn_dir) as usize, x - 1) {
                         moves.push(Move::new(Coord::from(y, x), Coord::from((y as isize + pawn_dir) as usize, x - 1), MoveType::EnPassant));
                     }
                 }
@@ -477,7 +475,7 @@ impl Board {
         }
         if x != 7 {
             // Capture right
-            if self.square_is_color((y as isize + pawn_dir) as usize, x + 1, !color) {
+            if self.square_is_color(Coord::from((y as isize + pawn_dir) as usize, x + 1), !color) {
                 if will_promote {
                     // Capture right and promote
                     moves.extend(Move::promotions(Coord::from(y, x), Coord::from((y as isize + pawn_dir) as usize, x + 1)));
@@ -488,7 +486,7 @@ impl Board {
             }
             // En passant right
             if let Some(sq) = self.en_passant {
-                if sq.tup() == ((y as isize + pawn_dir) as usize, x + 1) {
+                if sq == ((y as isize + pawn_dir) as usize, x + 1) {
                     moves.push(Move::new(Coord::from(y, x), Coord::from((y as isize + pawn_dir) as usize, x + 1), MoveType::EnPassant));
                 }
             }
@@ -496,34 +494,29 @@ impl Board {
         moves
     }
 
-    fn get_piece_moves(&self, y: usize, x: usize) -> Vec<Move> {
-        let piece = self.board[y][x].unwrap();
+    fn get_piece_moves(&self, coord: Coord) -> Vec<Move> {
+        let piece = self.get_square(coord).unwrap();
         match piece.piece_type {
-            PieceType::Rook => self.get_rook_moves(y, x),
-            PieceType::Knight => self.get_knight_moves(y, x),
-            PieceType::Bishop => self.get_bishop_moves(y, x),
-            PieceType::Queen => self.get_queen_moves(y, x),
-            PieceType::King => self.get_king_moves(y, x),
-            PieceType::Pawn => self.get_pawn_moves(y, x),
+            PieceType::Rook => self.get_rook_moves(coord),
+            PieceType::Knight => self.get_knight_moves(coord),
+            PieceType::Bishop => self.get_bishop_moves(coord),
+            PieceType::Queen => self.get_queen_moves(coord),
+            PieceType::King => self.get_king_moves(coord),
+            PieceType::Pawn => self.get_pawn_moves(coord),
         }
     }
 
     fn get_attacks<'a>(&'a self, color: bool) -> impl Iterator<Item = Move> + 'a {
         self.find_players_pieces(color)
-        .flat_map(|c| self.get_piece_moves(c.tup().0, c.tup().1)) // make nicer?
+        .flat_map(|c| self.get_piece_moves(c))
     }
 
     fn king_is_attacked(&self, color: bool) -> bool {
-        let king = Coord::all_tup()
-        .find(|&(y, x)|
-            match self.board[y][x] {
-                Some(piece) => piece.piece_type == PieceType::King && piece.color == color,
-                None => false
-            }
-        ).unwrap();
+        let king = Coord::all()
+        .find(|&c| self.square_is_piece(c, color, PieceType::King)).unwrap();
 
         self.get_attacks(!color)
-            .any(|mv| mv.to.tup() == king)
+            .any(|mv| mv.to() == king)
     }
 
     pub fn get_legal_moves<'a>(&mut self) -> Vec<Move> {

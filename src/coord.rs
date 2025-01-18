@@ -7,6 +7,12 @@ pub fn is_on_board(y: usize, x: usize) -> bool {
     y < 8 && x < 8 // type limits cover the bottom half
 }
 
+impl PartialEq<(usize, usize)> for Coord {
+    fn eq(&self, other: &(usize, usize)) -> bool {
+        self.0 == other.0 && self.1 == other.1
+    }
+}
+
 impl Coord {
     pub const fn from(y: usize, x: usize) -> Self {
         Self(y % BOARD_SIZE, x % BOARD_SIZE)
@@ -18,6 +24,14 @@ impl Coord {
 
     pub fn all_tup() -> impl Iterator<Item = (usize, usize)> {
         (0..64).map(|i| (i / 8, i % 8))
+    }
+
+    pub fn file(x: usize) -> impl Iterator<Item = Self> {
+        (0..8).map(move |y| Coord(y, x))
+    }
+
+    pub fn rank(y: usize) -> impl Iterator<Item = Self> {
+        (0..8).map(move |x| Coord(y, x))
     }
 
     pub fn from_san(san: &str) -> Option<Self> {
@@ -40,7 +54,7 @@ impl Coord {
         }
     }
 
-    pub fn add_mut(&mut self, step: (isize, isize)) -> bool {
+    pub fn add_mut(&mut self, step: &(isize, isize)) -> bool {
         if self.0 as isize + step.0 >= 0 && self.1 as isize + step.1 >= 0 {
             let y = (self.0 as isize + step.0) as usize;
             let x = (self.1 as isize + step.1) as usize;
@@ -53,7 +67,7 @@ impl Coord {
         false
     }
 
-    pub fn add(&self, step: (isize, isize)) -> Option<Coord> {
+    pub fn add(&self, step: &(isize, isize)) -> Option<Coord> {
         if self.0 as isize + step.0 >= 0 && self.1 as isize + step.1 >= 0 {
             let y = (self.0 as isize + step.0) as usize;
             let x = (self.1 as isize + step.1) as usize;
