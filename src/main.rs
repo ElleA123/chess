@@ -723,15 +723,21 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: i32, beta: i32) -> i32 {
 
 fn find_best_move(board: &mut Board, max_depth: usize, window: i32) -> Option<Move> {
     let top_score = board.score();
-    match board.get_legal_moves().into_iter().map(|mv| {
+    let mut best_move = None;
+    let mut best_score = -i32::MAX;
+    for mv in board.get_legal_moves() {
         board.make_move(&mv);
         let score = -negamax(board, max_depth - 1, top_score - window, top_score + window);
         board.undo_move(&mv);
-        (mv, score)
-    }).max_by(|(_, s1), (_, s2)| s1.cmp(s2)) {
-        Some((mv, _)) => Some(mv),
-        None => None
+        if score == i32::MAX {
+            return Some(mv);
+        }
+        if score > best_score {
+            best_score = score;
+            best_move = Some(mv);
+        }
     }
+    best_move
 }
 
 fn play_vs_self(depth: usize) {
@@ -764,29 +770,26 @@ fn get_input(msg: &str) -> String {
     buf.trim().to_owned()
 }
 
-fn main() {
-    // play_vs_self(4);
-
+fn best_move_of_input() {
     let fen = get_input("Input FEN:");
-    // let fen = "1rb3k1/4b1pp/p3P3/1Np1q3/8/5Q2/PP3PPP/R5K1 w - - 0 1";
-    // let fen = "rn5k/5Bp1/b1pp3P/p1q2P2/4N3/P1b2Q2/K4PP1/3R3R b - - 0 1";
-
     let mut board = Board::from_fen(fen.as_str()).unwrap();
-    // let mut board = Board::default();
-
-    // println!("{}", board);
+    println!("{}", board);
 
     let Ok(depth) = get_input("Search depth:")
         .parse::<usize>() else { panic!("Error: not a natural number"); };
-    // let depth = 3;
 
     let start = Instant::now();
+
     let best_move = find_best_move(&mut board, depth, 3);
+
     println!("Time: {:?}", start.elapsed());
 
     match best_move {
         Some(mv) => println!("{}", mv.uci()),
         None => print!("No moves!")
     }
-    
+}
+
+fn main() {
+    best_move_of_input();
 }
