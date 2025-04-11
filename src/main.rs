@@ -1,12 +1,14 @@
-pub mod piece; // pub mod PIECE...
-pub mod coord; // pub mod COORD...
-pub mod mv; // pub mod MOVE...
-pub mod board; // pub mod BOARD!!!
+mod piece; // mod PIECE...
+mod coord; // mod COORD...
+mod mv; // mod MOVE...
+mod board; // mod BOARD!!!
+mod zobrist; // mod zobrist
 
 use crate::piece::{Piece, PieceType};
 use crate::board::Board;
 use crate::coord::Coord;
-use crate::mv::Move;
+use crate::mv::{Move, MoveType};
+use crate::zobrist::ZobristHasher;
 
 use std::time::Instant;
 
@@ -142,7 +144,15 @@ fn best_move_of_input() {
 
 fn main() {
     // best_move_of_input();
-    play_vs_self(5);
+    // play_vs_self(5);
 
-    // let mut board = Board::from_fen("r3kb1r/pbpqpppp/3p2n1/3P4/1PP5/R7/1B3KPP/1N1Q1BNR w kq - 20 20").unwrap(); 
+    let hasher = ZobristHasher::new();
+    let mut board = Board::default();
+    // let mut board = Board::from_fen("r3kb1r/pbpqpppp/3p2n1/3P4/1PP5/R7/1B3KPP/1N1Q1BNR w kq - 20 20").unwrap();
+
+    println!("{:b}", hasher.hash(&board));
+
+    board.make_move(&Move::new(Coord::new(6, 4), Coord::new(4, 4), MoveType::Basic), false);
+
+    println!("{:b}", hasher.hash(&board))
 }

@@ -19,7 +19,8 @@ pub struct Board {
     en_passant: Option<Coord>,
     halfmove_count: usize,
     fullmove_num: usize,
-    undo_stack: Vec<UndoData>
+    undo_stack: Vec<UndoData>,
+    position_history: Vec<u64>,
 }
 
 const WHITE: bool = true;
@@ -120,7 +121,8 @@ impl Board {
                 en_passant,
                 halfmove_count,
                 fullmove_num,
-                undo_stack: Vec::with_capacity(8)
+                undo_stack: Vec::with_capacity(8),
+                position_history: Vec::new(),
             })
         } else {
             None
@@ -327,12 +329,30 @@ impl Board {
     //     }
     // }
 
+    pub fn get_board(&self) -> [[Option<&Piece>; 8]; 8] {
+        let mut board = [[None; 8]; 8];
+        for y in 0..8 {
+            for x in 0..8 {
+                board[y][x] = self.board[y][x].as_ref();
+            }
+        }
+        board
+    }
+
     pub const fn get_square(&self, coord: &Coord) -> Option<&Piece> {
         self.board[coord.y][coord.x].as_ref()
     }
 
     pub const fn get_side_to_move(&self) -> bool {
         self.side_to_move
+    }
+
+    pub const fn get_allowed_castling(&self) -> &(bool, bool, bool, bool) {
+        &self.allowed_castling
+    }
+
+    pub const fn get_en_passant(&self) -> Option<&Coord> {
+        self.en_passant.as_ref()
     }
 
     pub const fn square_is_color(&self, coord: &Coord, color: bool) -> bool {
@@ -576,7 +596,27 @@ impl Board {
         self.king_is_attacked(self.side_to_move)
     }
 
-    pub fn fifty_move_rule(&self) -> bool {
+    pub const fn fifty_move_rule(&self) -> bool {
         self.halfmove_count >= 100
+    }
+
+    pub fn check_threefold_repetition(&self) -> bool {
+        let Some(&curr_pos) = self.position_history.last() else { return false; };
+        let mut idx = self.position_history.len() - 1;
+        let mut count = 1;
+        loop {
+            if idx <= 2 {
+                break;
+            }
+            idx -= 2;
+            
+            if self.position_history[idx] == curr_pos {
+                count += 1;
+                if count == 3 {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
