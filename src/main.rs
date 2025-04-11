@@ -74,9 +74,7 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
 fn find_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
     let mut best_move = None;
     let mut best_score = f64::MIN;
-    let moves = board.get_legal_moves();
-    println!("{} moves", moves.len());
-    for mv in moves {
+    for mv in board.get_legal_moves() {
         board.make_move(&mv, true);
         let score = -negamax(board, max_depth - 1, f64::MIN, f64::MAX);
         board.undo_move();
@@ -146,8 +144,5 @@ fn main() {
     // best_move_of_input();
     play_vs_self(5);
 
-    // let mut board = Board::default();
-    // for mv in board.get_legal_moves() {
-    //     println!("{}", mv.get_uci());
-    // }
+    // let mut board = Board::from_fen("r3kb1r/pbpqpppp/3p2n1/3P4/1PP5/R7/1B3KPP/1N1Q1BNR w kq - 20 20").unwrap(); 
 }

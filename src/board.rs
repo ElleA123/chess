@@ -302,11 +302,7 @@ impl Board {
         }
 
         if undo_data.move_type == MoveType::Castle {
-            let (f_x, t_x) = match to_x {
-                6 => (7, 5),
-                2 => (0, 3),
-                _ => panic!("Error: invalid castle")
-            };
+            let (f_x, t_x) = if to_x == 6 {(7, 5)} else {(0, 3)};
             let extra_piece = self.board[to_y][t_x].unwrap();
             self.board[from_y][f_x] = Some(extra_piece);
             self.board[to_y][t_x] = None;
@@ -436,7 +432,7 @@ impl Board {
                 if self.move_is_legal(&mv) { moves.push(mv); }
             }
             // Forward 2
-            if (color == WHITE && y == 6) || (color == BLACK && y == 1) && self.board[(y as isize + 2*pawn_dir) as usize][x].is_none() {
+            if (color == WHITE && y == 6 || color == BLACK && y == 1) && self.board[(y as isize + 2*pawn_dir) as usize][x].is_none() {
                 let mv = Move::new(*coord, Coord::new((y as isize + 2*pawn_dir) as usize, x), MoveType::Basic);
                 if self.move_is_legal(&mv) { moves.push(mv); }
             }
