@@ -1,98 +1,84 @@
-use std::fmt::Display;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Coord(pub usize, pub usize);
-
-pub const BOARD_SIZE: usize = 8;
-
-pub const fn is_on_board(y: usize, x: usize) -> bool {
-    y < 8 && x < 8 // type limits cover the bottom half
+pub struct Coord {
+    pub y: usize,
+    pub x: usize
 }
 
-impl PartialEq<(usize, usize)> for Coord {
-    fn eq(&self, other: &(usize, usize)) -> bool {
-        self.0 == other.0 && self.1 == other.1
-    }
-}
-
-impl From<Coord> for (usize, usize) {
-    fn from(value: Coord) -> Self {
-        (value.0, value.1)
-    }
-}
-
-impl Display for Coord {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", (self.1 as u8 + 'a' as u8) as char, BOARD_SIZE - self.0)
-    }
+const fn is_on_board(y: usize, x: usize) -> bool {
+    y < 8 && x < 8
 }
 
 impl Coord {
-    pub const fn from(y: usize, x: usize) -> Option<Self> {
-        if is_on_board(y, x) {
-            Some(Self(y, x))
-        } else {
-            None
+    pub const ALL: [Coord; 64] = {
+        let mut arr = [Coord::new(0, 0); 64];
+        let mut i = 0;
+        while i < 64 {
+            arr[i].y = i / 8;
+            arr[i].x = i % 8;
+            i += 1;
         }
+        arr
+    };
+
+    pub const fn new(y: usize, x: usize) -> Self {
+        Self { y, x }
     }
 
-    pub fn from_san(san: &str) -> Option<Self> {
-        let mut chars = san.chars();
-        let x = match chars.next() {
-            Some(c) => (c as usize) - ('a' as usize),
-            None => { return None; }
-        };
+    pub const fn from_san(san: &str) -> Option<Self> {
+        let bytes = san.as_bytes();
+        if !san.is_ascii() || bytes.len() != 2 || bytes[0] < 'a' as u8 || bytes[1] < '1' as u8 { return None; }
 
-        let Some(y) = chars.next() else { return None; };
-        let y = match y.to_digit(10) {
-            Some(i) => BOARD_SIZE - i as usize,
-            None => return None
-        };
+        let x = san.as_bytes()[0] - 'a' as u8;
+        let y = san.as_bytes()[1] - '1' as u8;
 
         if y < 8 && x < 8 {
-            Some(Self(y, x))
+            Some(Self::new(y as usize, x as usize))
         } else {
             None
         }
     }
 
-    pub fn add_mut(&mut self, step: &(isize, isize)) -> bool {
-        if self.0 as isize + step.0 >= 0 && self.1 as isize + step.1 >= 0 {
-            let y = (self.0 as isize + step.0) as usize;
-            let x = (self.1 as isize + step.1) as usize;
+    pub const fn vals(&self) -> (usize, usize) {
+        (self.y, self.x)
+    } 
+
+    pub const fn add_mut(&mut self, step: &(isize, isize)) -> bool {
+        if self.y as isize + step.0 >= 0 && self.x as isize + step.1 >= 0 {
+            let y = (self.y as isize + step.0) as usize;
+            let x = (self.x as isize + step.1) as usize;
             if is_on_board(y, x) {
-                self.0 = y;
-                self.1 = x;
+                self.y = y;
+                self.x = x;
                 return true;
             }
         }
-        false
+        return false;
     }
 
-    pub fn add(&self, step: &(isize, isize)) -> Option<Coord> {
-        if self.0 as isize + step.0 >= 0 && self.1 as isize + step.1 >= 0 {
-            let y = (self.0 as isize + step.0) as usize;
-            let x = (self.1 as isize + step.1) as usize;
+    pub const fn add(&self, step: &(isize, isize)) -> Option<Coord> {
+        if self.y as isize + step.0 >= 0 && self.x as isize + step.1 >= 0 {
+            let y = (self.y as isize + step.0) as usize;
+            let x = (self.x as isize + step.1) as usize;
             if is_on_board(y, x) {
-                return Some(Coord(y, x));
+                return Some(Coord::new(y, x));
             }
         }
-        None
+        return None;
     }
 
-    pub fn all() -> impl Iterator<Item = Self> {
-        (0..64).map(|i| Coord(i / 8, i % 8))
+    pub const fn file(x: usize) -> [Self; 8] {
+        [Coord::new(0, x), Coord::new(1, x), Coord::new(2, x), Coord::new(3, x),
+        Coord::new(4, x), Coord::new(5, x), Coord::new(6, x), Coord::new(7, x)]
     }
 
-    pub fn all_tup() -> impl Iterator<Item = (usize, usize)> {
-        (0..64).map(|i| (i / 8, i % 8))
+    pub const fn rank(y: usize) -> [Self; 8] {
+        [Coord::new(y, 0), Coord::new(y, 1), Coord::new(y, 2), Coord::new(y, 3),
+        Coord::new(y, 4), Coord::new(y, 5), Coord::new(y, 6), Coord::new(y, 7)]
     }
+}
 
-    pub fn file(x: usize) -> impl Iterator<Item = Self> {
-        (0..8).map(move |y| Coord(y, x))
-    }
-
-    pub fn rank(y: usize) -> impl Iterator<Item = Self> {
-        (0..8).map(move |x| Coord(y, x))
+impl std::fmt::Display for Coord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", (self.x as u8 + 'a' as u8) as char, 8 - self.y)
     }
 }

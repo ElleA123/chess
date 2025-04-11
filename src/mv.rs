@@ -16,60 +16,39 @@ pub struct Move {
     move_type: MoveType
 }
 
-const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
+// const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
 pub const CASTLES: [Move; 4] = [
-    Move {
-        from: Coord(7, 4),
-        to: Coord(7, 6),
-        move_type: MoveType::Castle
-    },
-    Move {
-        from: Coord(7, 4),
-        to: Coord(7, 2),
-        move_type: MoveType::Castle
-    },
-    Move {
-        from: Coord(0, 4),
-        to: Coord(0, 6),
-        move_type: MoveType::Castle
-    },
-    Move {
-        from: Coord(0, 4),
-        to: Coord(0, 2),
-        move_type: MoveType::Castle
-    }
+    Move { from: Coord::new(7, 4), to: Coord::new(7, 6), move_type: MoveType::Castle },
+    Move { from: Coord::new(7, 4), to: Coord::new(7, 2), move_type: MoveType::Castle },
+    Move { from: Coord::new(0, 4), to: Coord::new(0, 6), move_type: MoveType::Castle },
+    Move { from: Coord::new(0, 4), to: Coord::new(0, 2), move_type: MoveType::Castle }
 ];
 
 impl Move {
-    pub fn new(from: Coord, to: Coord, move_type: MoveType) -> Self {
-        Move {
-            from,
-            to,
-            move_type
-        }
+    pub const fn new(from: Coord, to: Coord, move_type: MoveType) -> Self {
+        Move { from, to, move_type }
     }
 
-    pub fn from(&self) -> Coord {
-        self.from
+    pub const fn get_from(&self) -> &Coord {
+        &self.from
     }
 
-    pub fn to(&self) -> Coord {
-        self.to
+    pub const fn get_to(&self) -> &Coord {
+        &self.to
     }
 
-    pub fn move_type(&self) -> MoveType {
-        self.move_type
+    pub const fn get_move_type(&self) -> &MoveType {
+        &self.move_type
     }
 
-    pub fn promotions(from: Coord, to: Coord) -> impl Iterator<Item = Self> {
-        PROMOTABLES.iter().map(move |&pt| Move {
-            from,
-            to,
-            move_type: MoveType::Promotion(pt)
-        })
+    pub const fn get_promotions(from: Coord, to: Coord) -> [Self; 4] {
+        [Move {from, to, move_type: MoveType::Promotion(PieceType::Rook)},
+         Move {from, to, move_type: MoveType::Promotion(PieceType::Knight)},
+         Move {from, to, move_type: MoveType::Promotion(PieceType::Bishop)},
+         Move {from, to, move_type: MoveType::Promotion(PieceType::Queen)},]
     }
 
-    pub fn uci(&self) -> String {
+    pub fn get_uci(&self) -> String {
         let mut uci = format!("{}{}",
             self.from.to_string(),
             self.to.to_string()

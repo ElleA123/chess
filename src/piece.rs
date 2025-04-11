@@ -9,7 +9,7 @@ pub enum PieceType {
 }
 
 impl PieceType {
-    pub fn from_char(c: char) -> Option<Self> {
+    pub const fn from_char(c: char) -> Option<Self> {
         match c.to_ascii_lowercase() {
             'r' => Some(PieceType::Rook),
             'n' => Some(PieceType::Knight),
@@ -22,14 +22,14 @@ impl PieceType {
     }
 
     pub fn to_string(&self) -> String {
-        String::from(match self {
-            &PieceType::Rook => 'r',
-            &PieceType::Knight => 'n',
-            &PieceType::Bishop => 'b',
-            &PieceType::Queen => 'q',
-            &PieceType::King => 'k',
-            &PieceType::Pawn => 'p',
-        })
+        match self {
+            &PieceType::Rook => "r",
+            &PieceType::Knight => "n",
+            &PieceType::Bishop => "b",
+            &PieceType::Queen => "q",
+            &PieceType::King => "k",
+            &PieceType::Pawn => "p",
+        }.to_owned()
     }
 }
 
@@ -40,7 +40,7 @@ pub struct Piece {
 }
 
 impl Piece {
-    pub fn from_char(c: char) -> Option<Self> {
+    pub const fn new(c: char) -> Option<Self> {
         if let Some(piece_type) = PieceType::from_char(c) {
             Some(Piece {
                 piece_type,
@@ -50,12 +50,15 @@ impl Piece {
             None
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        if self.color {
+impl std::fmt::Display for Piece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = if self.color {
             self.piece_type.to_string().to_ascii_uppercase()
         } else {
             self.piece_type.to_string()
-        }
+        };
+        write!(f, "{}", s)
     }
 }

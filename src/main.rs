@@ -11,7 +11,7 @@ use crate::mv::Move;
 use std::time::Instant;
 
 fn score_side(board: &Board, color: bool) -> f64 {
-    let mut score = Coord::all().map(|c| {
+    let mut score = Coord::ALL.iter().map(|c| {
         if board.square_is_color(c, color) {
             match board.get_square(c).unwrap().piece_type {
                 PieceType::Rook => 5000.0,
@@ -27,8 +27,8 @@ fn score_side(board: &Board, color: bool) -> f64 {
     }).sum::<f64>();
 
     for x in 0..8 {
-        let num_pawns = Coord::file(x).filter(|&c| {
-            board.square_is_piece(c, color, PieceType::Pawn)
+        let num_pawns = Coord::file(x).iter().filter(|c| {
+            board.square_is_piece(*c, color, PieceType::Pawn)
         }).count();
         if num_pawns > 1 {
             score -= (num_pawns * 20) as f64;
@@ -57,7 +57,7 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     for mv in opts {
         board.make_move(&mv, true);
         let score = -negamax(board, depth - 1, -2.0 * beta, -2.0 * alpha) * 0.5;
-        board.undo_move(&mv);
+        board.undo_move();
         if score > max {
             max = score;
             if max > alpha {
@@ -74,10 +74,12 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
 fn find_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
     let mut best_move = None;
     let mut best_score = f64::MIN;
-    for mv in board.get_legal_moves() {
+    let moves = board.get_legal_moves();
+    println!("{} moves", moves.len());
+    for mv in moves {
         board.make_move(&mv, true);
         let score = -negamax(board, max_depth - 1, f64::MIN, f64::MAX);
-        board.undo_move(&mv);
+        board.undo_move();
         if score == f64::MAX {
             return Some(mv);
         }
@@ -94,7 +96,7 @@ fn play_vs_self(depth: usize) {
     loop {
         match find_best_move(&mut board, depth) {
             Some(mv) => {
-                println!("{}", mv.uci());
+                println!("{}", mv.get_uci());
                 board.make_move(&mv, false);
                 println!("{}", board);
             },
@@ -135,7 +137,7 @@ fn best_move_of_input() {
     println!("Time: {:?}", start.elapsed());
 
     match best_move {
-        Some(mv) => println!("{}", mv.uci()),
+        Some(mv) => println!("{}", mv.get_uci()),
         None => print!("No moves!")
     }
 }
@@ -143,4 +145,9 @@ fn best_move_of_input() {
 fn main() {
     // best_move_of_input();
     play_vs_self(5);
+
+    // let mut board = Board::default();
+    // for mv in board.get_legal_moves() {
+    //     println!("{}", mv.get_uci());
+    // }
 }
