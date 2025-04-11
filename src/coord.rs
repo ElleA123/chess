@@ -1,9 +1,11 @@
+use std::fmt::Display;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Coord(usize, usize);
+pub struct Coord(pub usize, pub usize);
 
 pub const BOARD_SIZE: usize = 8;
 
-pub fn is_on_board(y: usize, x: usize) -> bool {
+pub const fn is_on_board(y: usize, x: usize) -> bool {
     y < 8 && x < 8 // type limits cover the bottom half
 }
 
@@ -13,25 +15,25 @@ impl PartialEq<(usize, usize)> for Coord {
     }
 }
 
+impl From<Coord> for (usize, usize) {
+    fn from(value: Coord) -> Self {
+        (value.0, value.1)
+    }
+}
+
+impl Display for Coord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", (self.1 as u8 + 'a' as u8) as char, BOARD_SIZE - self.0)
+    }
+}
+
 impl Coord {
-    pub const fn from(y: usize, x: usize) -> Self {
-        Self(y % BOARD_SIZE, x % BOARD_SIZE)
-    }
-
-    pub fn all() -> impl Iterator<Item = Self> {
-        (0..64).map(|i| Coord(i / 8, i % 8))
-    }
-
-    pub fn all_tup() -> impl Iterator<Item = (usize, usize)> {
-        (0..64).map(|i| (i / 8, i % 8))
-    }
-
-    pub fn file(x: usize) -> impl Iterator<Item = Self> {
-        (0..8).map(move |y| Coord(y, x))
-    }
-
-    pub fn rank(y: usize) -> impl Iterator<Item = Self> {
-        (0..8).map(move |x| Coord(y, x))
+    pub const fn from(y: usize, x: usize) -> Option<Self> {
+        if is_on_board(y, x) {
+            Some(Self(y, x))
+        } else {
+            None
+        }
     }
 
     pub fn from_san(san: &str) -> Option<Self> {
@@ -78,11 +80,19 @@ impl Coord {
         None
     }
 
-    pub fn to_string(&self) -> String {
-        format!("{}{}", (self.1 as u8 + 'a' as u8) as char, BOARD_SIZE - self.0)
+    pub fn all() -> impl Iterator<Item = Self> {
+        (0..64).map(|i| Coord(i / 8, i % 8))
     }
 
-    pub fn tup(&self) -> (usize, usize) {
-        (self.0, self.1)
+    pub fn all_tup() -> impl Iterator<Item = (usize, usize)> {
+        (0..64).map(|i| (i / 8, i % 8))
+    }
+
+    pub fn file(x: usize) -> impl Iterator<Item = Self> {
+        (0..8).map(move |y| Coord(y, x))
+    }
+
+    pub fn rank(y: usize) -> impl Iterator<Item = Self> {
+        (0..8).map(move |x| Coord(y, x))
     }
 }

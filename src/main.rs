@@ -37,13 +37,13 @@ fn score_side(board: &Board, color: bool) -> f64 {
     score
 }
 
-fn score_board(board: &Board) -> f64 {
+fn relative_score(board: &Board) -> f64 {
     score_side(board, board.get_side_to_move()) - score_side(board, !board.get_side_to_move())
 }
 
 fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     if depth == 0 {
-        return score_board(board);
+        return relative_score(board);
     }
     let opts = board.get_legal_moves();
     if opts.len() == 0 {
@@ -55,7 +55,7 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     }
     let mut max = f64::MIN;
     for mv in opts {
-        board.make_move(&mv);
+        board.make_move(&mv, true);
         let score = -negamax(board, depth - 1, -2.0 * beta, -2.0 * alpha) * 0.5;
         board.undo_move(&mv);
         if score > max {
@@ -75,7 +75,7 @@ fn find_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
     let mut best_move = None;
     let mut best_score = f64::MIN;
     for mv in board.get_legal_moves() {
-        board.make_move(&mv);
+        board.make_move(&mv, true);
         let score = -negamax(board, max_depth - 1, f64::MIN, f64::MAX);
         board.undo_move(&mv);
         if score == f64::MAX {
@@ -95,7 +95,7 @@ fn play_vs_self(depth: usize) {
         match find_best_move(&mut board, depth) {
             Some(mv) => {
                 println!("{}", mv.uci());
-                board.make_move(&mv);
+                board.make_move(&mv, false);
                 println!("{}", board);
             },
             None => {
@@ -141,6 +141,6 @@ fn best_move_of_input() {
 }
 
 fn main() {
-    best_move_of_input();
-    // play_vs_self(4, 10.0);
+    // best_move_of_input();
+    play_vs_self(5);
 }

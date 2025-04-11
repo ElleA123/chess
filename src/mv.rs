@@ -19,23 +19,23 @@ pub struct Move {
 const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
 pub const CASTLES: [Move; 4] = [
     Move {
-        from: Coord::from(7, 4),
-        to: Coord::from(7, 6),
+        from: Coord(7, 4),
+        to: Coord(7, 6),
         move_type: MoveType::Castle
     },
     Move {
-        from: Coord::from(7, 4),
-        to: Coord::from(7, 2),
+        from: Coord(7, 4),
+        to: Coord(7, 2),
         move_type: MoveType::Castle
     },
     Move {
-        from: Coord::from(0, 4),
-        to: Coord::from(0, 6),
+        from: Coord(0, 4),
+        to: Coord(0, 6),
         move_type: MoveType::Castle
     },
     Move {
-        from: Coord::from(0, 4),
-        to: Coord::from(0, 2),
+        from: Coord(0, 4),
+        to: Coord(0, 2),
         move_type: MoveType::Castle
     }
 ];
