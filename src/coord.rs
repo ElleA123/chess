@@ -42,7 +42,7 @@ impl Coord {
         (self.y, self.x)
     } 
 
-    pub const fn add_mut(&mut self, step: &(isize, isize)) -> bool {
+    pub const fn add(&mut self, step: &(isize, isize)) -> bool {
         if self.y as isize + step.0 >= 0 && self.x as isize + step.1 >= 0 {
             let y = (self.y as isize + step.0) as usize;
             let x = (self.x as isize + step.1) as usize;
@@ -55,16 +55,16 @@ impl Coord {
         return false;
     }
 
-    pub const fn add(&self, step: &(isize, isize)) -> Option<Coord> {
-        if self.y as isize + step.0 >= 0 && self.x as isize + step.1 >= 0 {
-            let y = (self.y as isize + step.0) as usize;
-            let x = (self.x as isize + step.1) as usize;
-            if is_on_board(y, x) {
-                return Some(Coord::new(y, x));
-            }
-        }
-        return None;
-    }
+    // pub const fn add(&self, step: &(isize, isize)) -> Option<Coord> {
+    //     if self.y as isize + step.0 >= 0 && self.x as isize + step.1 >= 0 {
+    //         let y = (self.y as isize + step.0) as usize;
+    //         let x = (self.x as isize + step.1) as usize;
+    //         if is_on_board(y, x) {
+    //             return Some(Coord::new(y, x));
+    //         }
+    //     }
+    //     return None;
+    // }
 
     pub const fn file(x: usize) -> [Self; 8] {
         [Coord::new(0, x), Coord::new(1, x), Coord::new(2, x), Coord::new(3, x),

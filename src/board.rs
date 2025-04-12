@@ -2,6 +2,17 @@ use crate::{Piece, PieceType};
 use crate::mv::{Move, MoveType, CASTLES};
 use crate::coord::Coord;
 
+#[derive(Debug, Clone, Copy)]
+pub enum BoardState {
+    Live,
+    WhiteWin,
+    BlackWin,
+    Stalemate,
+    ThreefoldRepetition,
+    FiftyMoveRule,
+    InsufficientMaterial
+}
+
 struct UndoData {
     from: Coord,
     to: Coord,
@@ -20,7 +31,7 @@ pub struct Board {
     halfmove_count: usize,
     fullmove_num: usize,
     undo_stack: Vec<UndoData>,
-    position_history: Vec<u64>,
+    state: BoardState,
 }
 
 const WHITE: bool = true;
@@ -49,6 +60,7 @@ impl std::fmt::Display for Board {
 
 impl Board {
     pub fn from_fen(fen: &str) -> Option<Self> {
+        // TODO: reject non-ascii and check bytes
         let mut fen_fields = fen.split(" ");
 
         // Position
@@ -122,7 +134,7 @@ impl Board {
                 halfmove_count,
                 fullmove_num,
                 undo_stack: Vec::with_capacity(8),
-                position_history: Vec::new(),
+                state: BoardState::Live,
             })
         } else {
             None
@@ -185,7 +197,63 @@ impl Board {
         return fen;
     }
 
+    pub fn get_board(&self) -> [[Option<&Piece>; 8]; 8] {
+        let mut board = [[None; 8]; 8];
+        for y in 0..8 {
+            for x in 0..8 {
+                board[y][x] = self.board[y][x].as_ref();
+            }
+        }
+        board
+    }
+
+    pub const fn get_square(&self, coord: &Coord) -> Option<&Piece> {
+        self.board[coord.y][coord.x].as_ref()
+    }
+
+    pub const fn square_is_color(&self, coord: &Coord, color: bool) -> bool {
+        match self.get_square(coord) {
+            Some(piece) => piece.color == color,
+            None => false
+        }
+    }
+
+    pub const fn square_is_piece_type(&self, coord: &Coord, piece_type: PieceType) -> bool {
+        match self.get_square(coord) {
+            Some(piece) => piece.piece_type as u8 == piece_type as u8,
+            None => false
+        }
+    }
+
+    pub const fn square_is_piece(&self, coord: &Coord, color: bool, piece_type: PieceType) -> bool {
+        self.square_is_color(coord, color) && self.square_is_piece_type(coord, piece_type)
+    }
+
+    pub const fn get_side_to_move(&self) -> bool {
+        self.side_to_move
+    }
+
+    pub const fn get_allowed_castling(&self) -> &(bool, bool, bool, bool) {
+        &self.allowed_castling
+    }
+
+    pub const fn get_en_passant(&self) -> Option<&Coord> {
+        self.en_passant.as_ref()
+    }
+
+    pub const fn get_state(&self) -> BoardState {
+        self.state
+    }
+
+    pub const fn is_live(&self) -> bool {
+        match self.state {
+            BoardState::Live => true,
+            _ => false
+        }
+    }
+
     pub fn make_move(&mut self, mv: &Move, undoable: bool) {
+        if !self.is_live() { return; }
         // Only legal moves should make it to this function
         let (from_y, from_x) = mv.get_from().vals();
         let (to_y, to_x) = mv.get_to().vals();
@@ -207,13 +275,6 @@ impl Board {
             });
         } else {
             self.undo_stack.clear();
-        }
-
-        // Update halfmove count
-        if piece.piece_type == PieceType::Pawn || is_capture {
-            self.halfmove_count = 0;
-        } else {
-            self.halfmove_count += 1;
         }
 
         // Make the swap
@@ -270,13 +331,14 @@ impl Board {
         if !self.side_to_move {self.fullmove_num += 1;}
         // Update turn
         self.side_to_move = !self.side_to_move;
-    }
 
-    // fn make_moves(&mut self, moves: Vec<&Move>) {
-    //     for mv in moves {
-    //         self.make_move(mv);
-    //     }
-    // }
+        // Update halfmove count
+        if piece.piece_type == PieceType::Pawn || is_capture {
+            self.halfmove_count = 0;
+        } else {
+            self.halfmove_count += 1;
+        }
+    }
 
     pub fn undo_move(&mut self) {
         let Some(undo_data) = self.undo_stack.pop() else {return};
@@ -323,72 +385,39 @@ impl Board {
         self.side_to_move = !self.side_to_move;
     }
 
-    // fn undo_moves(&mut self, moves: Vec<&Move>) {
-    //     for mv in moves {
-    //         self.undo_move(mv);
-    //     }
-    // }
-
-    pub fn get_board(&self) -> [[Option<&Piece>; 8]; 8] {
-        let mut board = [[None; 8]; 8];
-        for y in 0..8 {
-            for x in 0..8 {
-                board[y][x] = self.board[y][x].as_ref();
-            }
+    pub fn get_legal_moves(&mut self) -> Vec<Move> {
+        let mut moves = Vec::with_capacity(40);
+        let piece_coords: Vec<Coord> = self.find_players_pieces(self.side_to_move).collect();
+        for coord in piece_coords {
+            self.get_piece_moves(&coord, &mut moves);
         }
-        board
-    }
-
-    pub const fn get_square(&self, coord: &Coord) -> Option<&Piece> {
-        self.board[coord.y][coord.x].as_ref()
-    }
-
-    pub const fn get_side_to_move(&self) -> bool {
-        self.side_to_move
-    }
-
-    pub const fn get_allowed_castling(&self) -> &(bool, bool, bool, bool) {
-        &self.allowed_castling
-    }
-
-    pub const fn get_en_passant(&self) -> Option<&Coord> {
-        self.en_passant.as_ref()
-    }
-
-    pub const fn square_is_color(&self, coord: &Coord, color: bool) -> bool {
-        match self.get_square(coord) {
-            Some(piece) => piece.color == color,
-            None => false
+        if moves.is_empty() {
+            self.update_state_no_moves();
         }
-    }
-
-    pub const fn square_is_piece_type(&self, coord: &Coord, piece_type: PieceType) -> bool {
-        match self.get_square(coord) {
-            Some(piece) => piece.piece_type as u8 == piece_type as u8,
-            None => false
-        }
-    }
-
-    pub const fn square_is_piece(&self, coord: &Coord, color: bool, piece_type: PieceType) -> bool {
-        self.square_is_color(coord, color) && self.square_is_piece_type(coord, piece_type)
+        moves
     }
 
     pub fn find_players_pieces<'a>(&'a self, color: bool) -> impl Iterator<Item = Coord> + 'a {
         Coord::ALL.into_iter().filter(move |c| self.square_is_color(c, color))
     }
 
-    pub fn move_is_legal(&mut self, mv: &Move) -> bool {
-        self.make_move(mv, true);
-        let is_legal = !self.king_is_attacked(!self.side_to_move);
-        self.undo_move();
-        is_legal
+    fn get_piece_moves(&mut self, coord: &Coord, moves: &mut Vec<Move>) {
+        let piece = self.get_square(coord).unwrap();
+        match piece.piece_type {
+            PieceType::Rook => self.get_rook_moves(coord, moves),
+            PieceType::Knight => self.get_knight_moves(coord, moves),
+            PieceType::Bishop => self.get_bishop_moves(coord, moves),
+            PieceType::Queen => self.get_queen_moves(coord, moves),
+            PieceType::King => self.get_king_moves(coord, moves),
+            PieceType::Pawn => self.get_pawn_moves(coord, moves),
+        }
     }
 
     fn get_linear_moves(&mut self, coord: &Coord, step_list: &[(isize, isize)], one_step_only: bool, moves: &mut Vec<Move>) {
         let color = self.get_square(coord).unwrap().color;
         for step in step_list {
             let mut test_coord = *coord;
-            while test_coord.add_mut(step) {
+            while test_coord.add(step) {
                 if self.square_is_color(&test_coord, color) { break; }
                 
                 let mv = Move::new(*coord, test_coord, MoveType::Basic);
@@ -498,25 +527,12 @@ impl Board {
         }
     }
 
-    fn get_piece_moves(&mut self, coord: &Coord, moves: &mut Vec<Move>) {
-        let piece = self.get_square(coord).unwrap();
-        match piece.piece_type {
-            PieceType::Rook => self.get_rook_moves(coord, moves),
-            PieceType::Knight => self.get_knight_moves(coord, moves),
-            PieceType::Bishop => self.get_bishop_moves(coord, moves),
-            PieceType::Queen => self.get_queen_moves(coord, moves),
-            PieceType::King => self.get_king_moves(coord, moves),
-            PieceType::Pawn => self.get_pawn_moves(coord, moves),
-        }
+    pub fn move_is_legal(&mut self, mv: &Move) -> bool {
+        self.make_move(mv, true);
+        let is_legal = !self.king_is_attacked(!self.side_to_move);
+        self.undo_move();
+        is_legal
     }
-
-    // fn get_attacks(&self, color: bool) -> Vec<Move> {
-    //     let mut attacks = Vec::new();
-    //     for coord in self.find_players_pieces(color) {
-    //         self.get_piece_moves(&coord, &mut attacks);
-    //     }
-    //     attacks
-    // }
 
     fn king_is_attacked(&self, color: bool) -> bool {
         let king = Coord::ALL.iter().find(|c|
@@ -564,7 +580,7 @@ impl Board {
     fn can_linearly_attack(&self, from: &Coord, to: &Coord, step_list: &[(isize, isize)]) -> bool {
         for step in step_list {
             let mut test_coord = *from;
-            while test_coord.add_mut(step) {
+            while test_coord.add(step) {
                 if test_coord == *to {
                     return true;
                 }
@@ -576,47 +592,60 @@ impl Board {
         return false;
     }
 
-    pub fn get_legal_moves(&mut self) -> Vec<Move> {
-        let mut moves = Vec::new();
-        let piece_coords: Vec<Coord> = self.find_players_pieces(self.side_to_move).collect();
-        for coord in piece_coords {
-            self.get_piece_moves(&coord, &mut moves);
-        }
-        moves
-        
-        // moves.into_iter().filter(|mv| {
-        //     self.make_move(mv, true);
-        //     let is_legal = !self.king_is_attacked(!self.side_to_move);
-        //     self.undo_move();
-        //     is_legal
-        // }).collect()
+    fn update_state_no_moves(&mut self) {
+        self.state = if self.is_check() {
+            BoardState::Stalemate
+        } else if self.side_to_move == WHITE {
+            BoardState::WhiteWin
+        } else {
+            BoardState::BlackWin
+        };
     }
 
     pub fn is_check(&self) -> bool {
         self.king_is_attacked(self.side_to_move)
     }
 
-    pub const fn fifty_move_rule(&self) -> bool {
-        self.halfmove_count >= 100
-    }
+    // fn update_state_post_move(&mut self) {
+    //     if self.check_threefold_repetition() {
+    //         self.state = BoardState::ThreefoldRepetition;
+    //     } else
+    //     if self.halfmove_count >= 100 {
+    //         self.state = BoardState::FiftyMoveRule;
+    //     } else if self.check_insufficient_material() {
+    //         self.state = BoardState::InsufficientMaterial;
+    //     }
+    // }
 
-    pub fn check_threefold_repetition(&self) -> bool {
-        let Some(&curr_pos) = self.position_history.last() else { return false; };
-        let mut idx = self.position_history.len() - 1;
-        let mut count = 1;
-        loop {
-            if idx <= 2 {
-                break;
-            }
-            idx -= 2;
-            
-            if self.position_history[idx] == curr_pos {
-                count += 1;
-                if count == 3 {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+    // fn get_attacks(&self, color: bool) -> Vec<Move> {
+    //     let mut attacks = Vec::new();
+    //     for coord in self.find_players_pieces(color) {
+    //         self.get_piece_moves(&coord, &mut attacks);
+    //     }
+    //     attacks
+    // }
+
+    // fn check_threefold_repetition(&self) -> bool {
+    //     let Some(&curr_pos) = self.position_history.last() else { return false; };
+    //     let mut idx = self.position_history.len() - 1;
+    //     let mut count = 1;
+    //     loop {
+    //         if idx <= 2 {
+    //             break;
+    //         }
+    //         idx -= 2;
+
+    //         if self.position_history[idx] == curr_pos {
+    //             count += 1;
+    //             if count == 3 {
+    //                 return true;
+    //             }
+    //         }
+    //     }
+    //     return false;
+    // }
+
+    // fn check_insufficient_material(&self) -> bool {
+    //     return false; // do this
+    // }
 }

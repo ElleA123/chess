@@ -10,8 +10,8 @@ pub struct ZobristHasher {
 }
 
 impl ZobristHasher {
-    pub fn new() -> Self {
-        let mut prng = PRNG::new(10);
+    pub fn new(seed: u128) -> Self {
+        let mut prng = PRNG::new(seed);
         let mut pieces = Box::new([[[MaybeUninit::uninit(); 8]; 8]; 12]);
         for i in 0..12 {
             for j in 0..8 {
@@ -85,6 +85,7 @@ impl PRNG {
     }
 
     fn next(&mut self) -> u64 {
+        // Constants from https://en.wikipedia.org/wiki/Linear_congruential_generator#Parameters_in_common_use
         self.0 *= 6364136223846793005;
         self.0 += 1442695040888963407;
         self.0 &= (1 << 64) - 1;

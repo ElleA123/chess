@@ -105,8 +105,8 @@ fn play_vs_self(depth: usize) {
                 return;
             }
         }
-        if board.fifty_move_rule() {
-            println!("ggs (50 move rule)");
+        if !board.is_live() {
+            println!("ggs");
             return;
         }
     }
@@ -144,9 +144,9 @@ fn best_move_of_input() {
 
 fn main() {
     // best_move_of_input();
-    // play_vs_self(5);
+    play_vs_self(5);
 
-    let hasher = ZobristHasher::new();
+    let hasher = ZobristHasher::new(10);
     let mut board = Board::default();
     // let mut board = Board::from_fen("r3kb1r/pbpqpppp/3p2n1/3P4/1PP5/R7/1B3KPP/1N1Q1BNR w kq - 20 20").unwrap();
 
