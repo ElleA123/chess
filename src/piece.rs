@@ -21,6 +21,18 @@ impl PieceType {
         }
     }
 
+    pub const fn from_ascii_char(c: u8) -> Option<Self> {
+        match c {
+            b'r' => Some(PieceType::Rook),
+            b'n' => Some(PieceType::Knight),
+            b'b' => Some(PieceType::Bishop),
+            b'q' => Some(PieceType::Queen),
+            b'k' => Some(PieceType::King),
+            b'p' => Some(PieceType::Pawn),
+            _ => None
+        }
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             &PieceType::Rook => "r",

@@ -1,5 +1,6 @@
 use crate::coord::Coord;
 use crate::PieceType;
+use crate::board::Board;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MoveType {
@@ -27,6 +28,30 @@ pub const CASTLES: [Move; 4] = [
 impl Move {
     pub const fn new(from: Coord, to: Coord, move_type: MoveType) -> Self {
         Move { from, to, move_type }
+    }
+
+    pub fn from_uci(uci: &str, board: &Board) -> Self {
+        let from = Coord::from_san(&uci[0..2]).unwrap();
+        let to = Coord::from_san(&uci[2..4]).unwrap();
+
+        let move_type = match board.get_square(&from).unwrap().piece_type {
+            PieceType::Pawn => {
+                if let Some(ep) = board.get_en_passant(){
+                    if to == *ep { MoveType::EnPassant } else { MoveType::Basic }
+                }
+                else if to.y == 0 || to.y == 7 {
+                    MoveType::Promotion(PieceType::from_ascii_char(uci.bytes().nth(4).unwrap()).unwrap())
+                }
+                else { MoveType::Basic }
+            },
+            PieceType::King => {
+                if uci == "e1g1" || uci == "e1c1" || uci == "e8g8" || uci == "e8c8" { MoveType::Castle }
+                else { MoveType::Basic }
+            },
+            _ => MoveType::Basic
+        };
+
+        Self { from, to, move_type }
     }
 
     pub const fn get_from(&self) -> &Coord {

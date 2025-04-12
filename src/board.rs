@@ -20,7 +20,7 @@ struct UndoData {
     captured: Option<Piece>,
     en_passant: Option<Coord>,
     allowed_castling: (bool, bool, bool, bool),
-    halfmove_count: usize,
+    halfmove_count: u32,
 }
 
 pub struct Board {
@@ -28,8 +28,8 @@ pub struct Board {
     side_to_move: bool,
     allowed_castling: (bool, bool, bool, bool), // KQkq
     en_passant: Option<Coord>,
-    halfmove_count: usize,
-    fullmove_num: usize,
+    halfmove_count: u32,
+    fullmove_num: u32,
     undo_stack: Vec<UndoData>,
     state: BoardState,
 }
@@ -120,10 +120,10 @@ impl Board {
         };
 
         let Some(halfmove_count) = fen_fields.next() else { return None; };
-        let Ok(halfmove_count) = halfmove_count.parse::<usize>() else { return None; };
+        let Ok(halfmove_count) = halfmove_count.parse::<u32>() else { return None; };
 
         let Some(fullmove_num) = fen_fields.next() else { return None; };
-        let Ok(fullmove_num) = fullmove_num.parse::<usize>() else { return None; };
+        let Ok(fullmove_num) = fullmove_num.parse::<u32>() else { return None; };
 
         if fen_fields.count() == 0 {
             Some(Board {
