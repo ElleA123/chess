@@ -62,10 +62,10 @@ impl ZobristHasher {
 
         // Castling
         let castling = board.get_allowed_castling();
-        let castling_idx = castling.0 as usize
-            + ((castling.1 as usize) << 1)
-            + ((castling.2 as usize) << 2)
-            + ((castling.3 as usize) << 3);
+        let castling_idx = castling.w_k as usize
+            + ((castling.w_q as usize) << 1)
+            + ((castling.b_k as usize) << 2)
+            + ((castling.b_q as usize) << 3);
         hash ^= self.allowed_castling[castling_idx];
 
         // En passant

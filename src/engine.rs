@@ -1,12 +1,17 @@
-use crate::chess::*;
+mod psts;
 
-pub fn get_best_move(board: &mut Board, max_depth: u32) -> Option<Move> {
+use crate::chess::*;
+use psts::PSTS_MG;
+use pretty_assertions::{assert_eq, assert_ne};
+
+pub fn get_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
     let mut best_move = None;
     let mut best_score = f64::MIN;
     for mv in board.get_legal_moves() {
         board.make_move(&mv, true);
         let score = -negamax(board, max_depth - 1, f64::MIN, f64::MAX);
         board.undo_move();
+
         if score == f64::MAX {
             return Some(mv);
         }
@@ -18,7 +23,26 @@ pub fn get_best_move(board: &mut Board, max_depth: u32) -> Option<Move> {
     best_move
 }
 
-fn negamax(board: &mut Board, depth: u32, mut alpha: f64, beta: f64) -> f64 {
+pub fn dfs_search(board: &mut Board, depth: usize) -> Option<Move> {
+    let mut best_move = None;
+    let mut best_score = f64::MIN;
+    for mv in board.get_legal_moves() {
+        board.make_move(&mv, true);
+        let score = -negamax(board, depth - 1, f64::MIN, f64::MAX);
+        board.undo_move();
+
+        if score == f64::MAX {
+            return Some(mv);
+        }
+        if score > best_score {
+            best_score = score;
+            best_move = Some(mv);
+        }
+    }
+    best_move
+}
+
+fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     if depth == 0 {
         return relative_score(board);
     }
@@ -48,33 +72,44 @@ fn negamax(board: &mut Board, depth: u32, mut alpha: f64, beta: f64) -> f64 {
     max
 }
 
+const MATERIAL_FACTOR: f64 = 1.0;
+const PST_FACTOR: f64 = 0.01;
+
 fn relative_score(board: &Board) -> f64 {
     score_side(board, board.get_side_to_move()) - score_side(board, !board.get_side_to_move())
 }
 
 fn score_side(board: &Board, color: Color) -> f64 {
-    let mut score = COORDS.into_iter().map(|c| {
-        if board.square_is_color(c, color) {
-            match board.get_square(c).unwrap().piece_type {
-                PieceType::Rook => 5000.0,
-                PieceType::Knight => 3000.0,
-                PieceType::Bishop => 3000.0,
-                PieceType::Queen => 9000.0,
-                PieceType::King => 0.0,
-                PieceType::Pawn => 1000.0
-            }
-        } else {
-            0.0
-        }
-    }).sum::<f64>();
+    let mut score = 0.0;
 
-    for x in 0..8 {
-        let num_pawns = Coord::file(x).iter().filter(|&c| {
-            board.square_is_piece(*c, color, PieceType::Pawn)
-        }).count();
-        if num_pawns > 1 {
-            score -= (num_pawns * 20) as f64;
-        }
+    for coord in board.find_players_pieces(color) {
+        let piece = board.get_square(coord).unwrap();
+        score += MATERIAL_FACTOR * match piece.piece_type {
+            PieceType::Rook => 5.,
+            PieceType::Knight => 3.,
+            PieceType::Bishop => 3.,
+            PieceType::King => 0.,
+            PieceType::Queen => 9.,
+            PieceType::Pawn => 1.
+        };
+        score += PST_FACTOR * psts::get_mg(piece, coord) as f64;
     }
+
+    // for coord in COORDS {
+    //     if let Some(piece) = board.get_square(coord) {
+    //         if piece.color == color {
+    //             score += MATERIAL_FACTOR * match piece.piece_type {
+    //                 PieceType::Rook => 5.,
+    //                 PieceType::Knight => 3.,
+    //                 PieceType::Bishop => 3.,
+    //                 PieceType::King => 0.,
+    //                 PieceType::Queen => 9.,
+    //                 PieceType::Pawn => 1.
+    //             };
+    //             score += PST_FACTOR * psts::get_mg(piece, coord) as f64;
+    //         }
+    //     }
+    // }
+
     score
 }

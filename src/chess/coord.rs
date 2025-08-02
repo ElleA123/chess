@@ -39,6 +39,10 @@ impl Coord {
         }
     }
 
+    pub const fn idx(&self) -> usize {
+        self.y * 8 + self.x
+    }
+
     pub const fn add(&mut self, step: (isize, isize)) -> bool {
         if self.y as isize + step.0 >= 0 && self.x as isize + step.1 >= 0 {
             let y = (self.y as isize + step.0) as usize;
@@ -63,15 +67,15 @@ impl Coord {
     //     return None;
     // }
 
-    pub const fn file(x: usize) -> [Self; 8] {
-        [Coord::new(0, x), Coord::new(1, x), Coord::new(2, x), Coord::new(3, x),
-        Coord::new(4, x), Coord::new(5, x), Coord::new(6, x), Coord::new(7, x)]
-    }
+    // pub const fn file(x: usize) -> [Self; 8] {
+    //     [Coord::new(0, x), Coord::new(1, x), Coord::new(2, x), Coord::new(3, x),
+    //     Coord::new(4, x), Coord::new(5, x), Coord::new(6, x), Coord::new(7, x)]
+    // }
 
-    pub const fn rank(y: usize) -> [Self; 8] {
-        [Coord::new(y, 0), Coord::new(y, 1), Coord::new(y, 2), Coord::new(y, 3),
-        Coord::new(y, 4), Coord::new(y, 5), Coord::new(y, 6), Coord::new(y, 7)]
-    }
+    // pub const fn rank(y: usize) -> [Self; 8] {
+    //     [Coord::new(y, 0), Coord::new(y, 1), Coord::new(y, 2), Coord::new(y, 3),
+    //     Coord::new(y, 4), Coord::new(y, 5), Coord::new(y, 6), Coord::new(y, 7)]
+    // }
 }
 
 impl std::fmt::Display for Coord {

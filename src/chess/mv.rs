@@ -17,14 +17,6 @@ pub struct Move {
     pub move_type: MoveType
 }
 
-// const PROMOTABLES: [PieceType; 4] = [PieceType::Rook, PieceType::Knight, PieceType::Bishop, PieceType::Queen];
-pub const CASTLES: [Move; 4] = [
-    Move { from: Coord::new(7, 4), to: Coord::new(7, 6), move_type: MoveType::Castle },
-    Move { from: Coord::new(7, 4), to: Coord::new(7, 2), move_type: MoveType::Castle },
-    Move { from: Coord::new(0, 4), to: Coord::new(0, 6), move_type: MoveType::Castle },
-    Move { from: Coord::new(0, 4), to: Coord::new(0, 2), move_type: MoveType::Castle }
-];
-
 impl Move {
     pub const fn new(from: Coord, to: Coord, move_type: MoveType) -> Self {
         Move { from, to, move_type }
@@ -61,7 +53,7 @@ impl Move {
          Move {from, to, move_type: MoveType::Promotion(PieceType::Queen)}]
     }
 
-    pub fn get_uci(&self) -> String {
+    pub fn uci(&self) -> String {
         format!("{}{}{}",
             self.from.to_string(),
             self.to.to_string(),

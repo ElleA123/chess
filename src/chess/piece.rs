@@ -4,6 +4,8 @@ pub enum Color {
     Black
 }
 
+const NUM_COLORS: usize = 2;
+
 impl Color {
     pub const fn is_white(&self) -> bool {
         match self {
@@ -39,6 +41,8 @@ pub enum PieceType {
     King,
     Pawn
 }
+
+const NUM_PIECE_TYPES: usize = 6;
 
 impl PieceType {
     pub const fn from_char(c: char) -> Option<Self> {
@@ -83,6 +87,8 @@ pub struct Piece {
     pub color: Color
 }
 
+const NUM_PIECES: usize = NUM_COLORS * NUM_PIECE_TYPES;
+
 impl Piece {
     pub fn new(c: char) -> Option<Self> {
         Some(Piece {
@@ -96,6 +102,10 @@ impl Piece {
             piece_type: PieceType::from_ascii_char(c)?,
             color: if c.is_ascii_uppercase() { Color::White } else { Color::Black }
         })
+    }
+
+    pub const fn idx(&self) -> usize {
+        self.color as usize * 6 + self.piece_type as usize
     }
 }
 

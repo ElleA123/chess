@@ -1,10 +1,23 @@
 use crate::chess::piece::Color;
 
 use super::piece::{Piece, PieceType};
-use super::mv::{Move, MoveType, CASTLES};
+use super::mv::{Move, MoveType};
 use super::coord::{Coord, COORDS};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Castles {
+    pub w_k: bool,
+    pub w_q: bool,
+    pub b_k: bool,
+    pub b_q: bool
+}
+
+pub const CASTLE_W_K: Move = Move { from: Coord::new(7, 4), to: Coord::new(7, 6), move_type: MoveType::Castle };
+pub const CASTLE_W_Q: Move = Move { from: Coord::new(7, 4), to: Coord::new(7, 2), move_type: MoveType::Castle };
+pub const CASTLE_B_K: Move = Move { from: Coord::new(0, 4), to: Coord::new(0, 6), move_type: MoveType::Castle };
+pub const CASTLE_B_Q: Move = Move { from: Coord::new(0, 4), to: Coord::new(0, 2), move_type: MoveType::Castle };
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BoardState {
     Live,
     WhiteWin,
@@ -15,20 +28,22 @@ pub enum BoardState {
     InsufficientMaterial
 }
 
+#[derive(Debug, Clone, PartialEq)]
 struct UndoData {
     from: Coord,
     to: Coord,
     move_type: MoveType,
     captured: Option<Piece>,
     en_passant: Option<Coord>,
-    allowed_castling: (bool, bool, bool, bool),
+    allowed_castling: Castles,
     halfmove_count: u32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Board {
     board: [[Option<Piece>; 8]; 8],
     side_to_move: Color,
-    allowed_castling: (bool, bool, bool, bool), // KQkq
+    allowed_castling: Castles, // KQkq
     en_passant: Option<Coord>,
     halfmove_count: u32,
     fullmove_num: u32,
@@ -102,12 +117,12 @@ impl Board {
 
         // Castling avilability - TODO: add error handling
         let Some(allowed_castling) = fen_fields.next() else { return None; };
-        let allowed_castling = (
-            allowed_castling.contains("K"),
-            allowed_castling.contains("Q"),
-            allowed_castling.contains("k"),
-            allowed_castling.contains("q"),
-        );
+        let allowed_castling = Castles {
+            w_k: allowed_castling.contains("K"),
+            w_q: allowed_castling.contains("Q"),
+            b_k: allowed_castling.contains("k"),
+            b_q: allowed_castling.contains("q"),
+        };
 
         // En passant
         let Some(en_passant) = fen_fields.next() else { return None; };
@@ -175,10 +190,10 @@ impl Board {
 
         // Castling
         let mut can_castle = false;
-        if self.allowed_castling.0 { fen += "K"; can_castle = true; }
-        if self.allowed_castling.1 { fen += "Q"; can_castle = true; }
-        if self.allowed_castling.2 { fen += "k"; can_castle = true; }
-        if self.allowed_castling.3 { fen += "q"; can_castle = true; }
+        if self.allowed_castling.w_k { fen += "K"; can_castle = true; }
+        if self.allowed_castling.w_q { fen += "Q"; can_castle = true; }
+        if self.allowed_castling.b_k { fen += "k"; can_castle = true; }
+        if self.allowed_castling.b_q { fen += "q"; can_castle = true; }
         if !can_castle { fen += "-"; }
         fen += " ";
 
@@ -238,7 +253,7 @@ impl Board {
         self.side_to_move
     }
 
-    pub const fn get_allowed_castling(&self) -> (bool, bool, bool, bool) {
+    pub const fn get_allowed_castling(&self) -> Castles {
         self.allowed_castling
     }
 
@@ -310,18 +325,18 @@ impl Board {
 
         // Update castling availability -- a bit inefficient but like whatevs?
         match (from_y, from_x) {
-            (7, 4) => { // K
-                self.allowed_castling.0 = false;
-                self.allowed_castling.1 = false;
+            (7, 4) => {
+                self.allowed_castling.w_k = false;
+                self.allowed_castling.w_q = false;
             },
-            (0, 4) => { // k
-                self.allowed_castling.2 = false;
-                self.allowed_castling.3 = false;
+            (0, 4) => {
+                self.allowed_castling.b_k = false;
+                self.allowed_castling.b_q = false;
             },
-            (7, 7) => { self.allowed_castling.0 = false; }, // qR
-            (7, 0) => { self.allowed_castling.1 = false; }, // kR
-            (0, 7) => { self.allowed_castling.2 = false; }, // qr
-            (0, 0) => { self.allowed_castling.3 = false; }, // kr
+            (7, 7) => { self.allowed_castling.w_k = false; },
+            (7, 0) => { self.allowed_castling.w_q = false; },
+            (0, 7) => { self.allowed_castling.b_k = false; },
+            (0, 0) => { self.allowed_castling.b_q = false; },
             _ => ()
         };
 
@@ -391,10 +406,13 @@ impl Board {
         }
         // Update turn
         self.side_to_move = !self.side_to_move;
+
+        // Reset board state
+        self.state = BoardState::Live;
     }
 
     pub fn get_legal_moves(&mut self) -> Vec<Move> {
-        let mut moves = Vec::with_capacity(40);
+        let mut moves = Vec::with_capacity(80);
         let piece_coords: Vec<Coord> = self.find_players_pieces(self.side_to_move).collect();
         for coord in piece_coords {
             self.get_piece_moves(coord, &mut moves);
@@ -457,19 +475,19 @@ impl Board {
         // TODO: castling out of/through check
         // TODO: make four separate consts, or just write it out in this fn
         if coord.x == 4 && coord.y == 7 {
-            if self.allowed_castling.0 && self.board[7][5].is_none() && self.board[7][6].is_none() {
-                if self.move_is_legal(&CASTLES[0]) { moves.push(CASTLES[0].clone()); }
+            if self.allowed_castling.w_k && self.board[7][5].is_none() && self.board[7][6].is_none() {
+                if self.move_is_legal(&CASTLE_W_K) { moves.push(CASTLE_W_K); }
             }
-            if self.allowed_castling.1 && self.board[7][2].is_none() && self.board[7][3].is_none() && self.board[7][4].is_none() {
-                if self.move_is_legal(&CASTLES[1]) { moves.push(CASTLES[1].clone()); }
+            if self.allowed_castling.w_q && self.board[7][2].is_none() && self.board[7][3].is_none() && self.board[7][4].is_none() {
+                if self.move_is_legal(&CASTLE_W_Q) { moves.push(CASTLE_W_Q); }
             }
         }
         if coord.x == 4 && coord.y == 0 {
-            if self.allowed_castling.2 && self.board[0][5].is_none() && self.board[0][6].is_none() {
-                if self.move_is_legal(&CASTLES[2]) { moves.push(CASTLES[2].clone()); }
+            if self.allowed_castling.b_k && self.board[0][5].is_none() && self.board[0][6].is_none() {
+                if self.move_is_legal(&CASTLE_B_K) { moves.push(CASTLE_B_K); }
             }
-            if self.allowed_castling.3 && self.board[0][2].is_none() && self.board[0][3].is_none() && self.board[0][4].is_none() {
-                if self.move_is_legal(&CASTLES[3]) { moves.push(CASTLES[3].clone()); }
+            if self.allowed_castling.b_q && self.board[0][2].is_none() && self.board[0][3].is_none() && self.board[0][4].is_none() {
+                if self.move_is_legal(&CASTLE_B_Q) { moves.push(CASTLE_B_Q); }
             }
         }
     }

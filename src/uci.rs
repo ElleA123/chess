@@ -77,9 +77,9 @@ fn parse_and_go(words: Vec<&str>, board: &mut Board) {
 
 }
 
-fn get_and_send_move(board: &mut Board, depth: u32) {
+fn get_and_send_move(board: &mut Board, depth: usize) {
     if let Some(mv) = get_best_move(board, depth) {
-        println!("{}", mv.get_uci())
+        println!("{}", mv.uci())
     } else {
         println!("0000");
     }    
