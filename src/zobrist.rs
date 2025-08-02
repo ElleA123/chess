@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-use crate::board::Board;
+use crate::chess::Board;
 
 pub struct ZobristHasher {
     pieces: [[[u64; 8]; 8]; 12],
@@ -56,7 +56,7 @@ impl ZobristHasher {
         }
 
         // Side to move
-        if board.get_side_to_move() {
+        if board.get_side_to_move().is_white() {
             hash ^= self.side_to_move;
         }
 

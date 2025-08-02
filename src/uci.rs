@@ -1,7 +1,6 @@
 use std::{thread, sync::mpsc};
 
-use crate::board::Board;
-use crate::mv::Move;
+use crate::chess::{Board, Move};
 use crate::engine::get_best_move;
 
 pub fn setup_uci_engine() {
@@ -26,7 +25,6 @@ pub fn setup_uci_engine() {
 }
 
 fn parse_uci_command(line: &str, board: &mut Board) {
-    println!("{}", line);
     let words: Vec<&str> = line.trim().split(" ").collect();
     match words[0] {
         "quit" => std::process::exit(0),

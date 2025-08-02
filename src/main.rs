@@ -1,13 +1,9 @@
-mod piece; // mod PIECE...
-mod coord; // mod COORD...
-mod mv; // mod MOVE...
-mod board; // mod BOARD!!!
+mod chess;
 mod zobrist;
 mod engine;
 mod uci;
 
-use crate::piece::{Piece, PieceType};
-use crate::board::Board;
+use chess::{Board, Move};
 // use crate::zobrist::ZobristHasher;
 use crate::engine::get_best_move;
 
@@ -21,14 +17,17 @@ fn play_vs_self(depth: u32) {
                 println!("{}", mv.get_uci());
                 board.make_move(&mv, false);
                 println!("{}", board);
+                println!("{}", board.is_live());
             },
             None => {
                 println!("ggs");
+                println!("{}", board.get_fen());
                 return;
             }
         }
         if !board.is_live() {
-            println!("ggs");
+            println!("ggs - game no longer live");
+            println!("{}", board.get_fen());
             return;
         }
     }
@@ -68,5 +67,11 @@ fn main() {
     // best_move_of_input();
     // play_vs_self(5);
 
-    uci::setup_uci_engine();
+    let mut board = Board::from_fen("r2qkbnr/pbpppppp/1pn5/8/P7/1P6/2PPPPPP/RNBQKBNR w KQkq - 1 4").unwrap();
+    board.make_move(&Move::from_uci("e2e3", &board), false);
+    println!("{}", board);
+    println!("{:?}", board.is_live());
+    println!("{:?}", board.get_legal_moves());
+
+    // uci::setup_uci_engine();
 }

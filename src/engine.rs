@@ -1,7 +1,4 @@
-use crate::piece::PieceType;
-use crate::board::Board;
-use crate::coord::Coord;
-use crate::mv::Move;
+use crate::chess::*;
 
 pub fn get_best_move(board: &mut Board, max_depth: u32) -> Option<Move> {
     let mut best_move = None;
@@ -55,8 +52,8 @@ fn relative_score(board: &Board) -> f64 {
     score_side(board, board.get_side_to_move()) - score_side(board, !board.get_side_to_move())
 }
 
-fn score_side(board: &Board, color: bool) -> f64 {
-    let mut score = Coord::ALL.iter().map(|c| {
+fn score_side(board: &Board, color: Color) -> f64 {
+    let mut score = COORDS.into_iter().map(|c| {
         if board.square_is_color(c, color) {
             match board.get_square(c).unwrap().piece_type {
                 PieceType::Rook => 5000.0,
@@ -72,7 +69,7 @@ fn score_side(board: &Board, color: bool) -> f64 {
     }).sum::<f64>();
 
     for x in 0..8 {
-        let num_pawns = Coord::file(x).iter().filter(|c| {
+        let num_pawns = Coord::file(x).iter().filter(|&c| {
             board.square_is_piece(*c, color, PieceType::Pawn)
         }).count();
         if num_pawns > 1 {

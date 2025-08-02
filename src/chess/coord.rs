@@ -8,19 +8,20 @@ const fn is_on_board(y: usize, x: usize) -> bool {
     y < 8 && x < 8
 }
 
-impl Coord {
-    pub const ALL: [Coord; 64] = {
-        let mut arr = [Coord::new(0, 0); 64];
-        let mut i = 0;
-        while i < 64 {
-            arr[i].y = i / 8;
-            arr[i].x = i % 8;
-            i += 1;
-        }
-        arr
-    };
+pub const COORDS: [Coord; 64] = {
+    let mut arr = [Coord::new(0, 0); 64];
+    let mut i = 0;
+    while i < 64 {
+        arr[i].y = i / 8;
+        arr[i].x = i % 8;
+        i += 1;
+    }
+    arr
+};
 
+impl Coord {
     pub const fn new(y: usize, x: usize) -> Self {
+        assert!(is_on_board(y, x));
         Self { y, x }
     }
 
@@ -28,8 +29,8 @@ impl Coord {
         let bytes = san.as_bytes();
         if !san.is_ascii() || bytes.len() != 2 || bytes[0] < 'a' as u8 || bytes[1] < '1' as u8 { return None; }
 
-        let x = san.as_bytes()[0] - 'a' as u8;
-        let y = san.as_bytes()[1] - '1' as u8;
+        let x = bytes[0] - 'a' as u8;
+        let y = 7 - (bytes[1] - '1' as u8);
 
         if y < 8 && x < 8 {
             Some(Self::new(y as usize, x as usize))
@@ -38,11 +39,7 @@ impl Coord {
         }
     }
 
-    pub const fn vals(&self) -> (usize, usize) {
-        (self.y, self.x)
-    } 
-
-    pub const fn add(&mut self, step: &(isize, isize)) -> bool {
+    pub const fn add(&mut self, step: (isize, isize)) -> bool {
         if self.y as isize + step.0 >= 0 && self.x as isize + step.1 >= 0 {
             let y = (self.y as isize + step.0) as usize;
             let x = (self.x as isize + step.1) as usize;
