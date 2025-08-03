@@ -42,13 +42,14 @@ struct UndoData {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Board {
     board: [[Option<Piece>; 8]; 8],
+    state: BoardState,
     side_to_move: Color,
     allowed_castling: Castles, // KQkq
     en_passant: Option<Coord>,
     halfmove_count: u32,
     fullmove_num: u32,
     undo_stack: Vec<UndoData>,
-    state: BoardState,
+    history: Vec<u64>,
 }
 
 const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
@@ -143,13 +144,14 @@ impl Board {
         if fen_fields.count() == 0 {
             Some(Board {
                 board,
+                state: BoardState::Live,
                 side_to_move,
                 allowed_castling,
                 en_passant,
                 halfmove_count,
                 fullmove_num,
-                undo_stack: Vec::with_capacity(8),
-                state: BoardState::Live,
+                undo_stack: Vec::new(),
+                history: Vec::new()
             })
         } else {
             None
@@ -422,6 +424,8 @@ impl Board {
         }
         moves
     }
+
+
 
     pub fn find_players_pieces<'a>(&'a self, color: Color) -> impl Iterator<Item = Coord> + 'a {
         COORDS.into_iter().filter(move |&c| self.square_is_color(c, color))
