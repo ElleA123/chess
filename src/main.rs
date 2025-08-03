@@ -3,9 +3,9 @@ mod zobrist;
 mod engine;
 mod uci;
 
-use chess::{Board, Move};
-// use crate::zobrist::ZobristHasher;
-use crate::{chess::Coord, engine::get_best_move};
+use chess::Board;
+use engine::get_best_move;
+use uci::run_uci_mode;
 
 use std::time::Instant;
 
@@ -60,8 +60,10 @@ fn best_move_of_input() {
 }
 
 fn main() {
+    run_uci_mode();
+
     // best_move_of_input();
-    play_vs_self(5);
+    // play_vs_self(5);
 
     // let mut board = Board::from_fen("r1b1kbnr/pppp1ppp/2n5/4p3/3P4/2N1Bq2/PPP1PPPP/R2QKB1R w KQkq - 0 5").unwrap();
     // for mv in board.get_legal_moves() {

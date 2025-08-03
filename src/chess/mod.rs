@@ -5,7 +5,7 @@ mod board;
 
 pub use self::{
     piece::{Color, PieceType, Piece},
-    coord::{Coord, COORDS},
+    coord::Coord,
     mv::Move,
     board::Board
 };
