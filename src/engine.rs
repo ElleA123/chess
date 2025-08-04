@@ -3,13 +3,31 @@ mod psts;
 use crate::chess::*;
 
 pub fn get_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
-    dfs_search(board, max_depth)
+    let mut moves = board.get_legal_moves();
+
+    sort_moves(board, &mut moves, 2);
+
+    dfs_search(board, moves, max_depth)
 }
 
-pub fn dfs_search(board: &mut Board, depth: usize) -> Option<Move> {
+pub fn sort_moves(board: &mut Board, moves: &mut Vec<Move>, depth: usize) {
+    let scores: Vec<(Move, f64)> = moves.iter().map(|mv| {
+        board.make_move(mv, true);
+        let score = -negamax(board, depth - 1, f64::MIN, f64::MAX);
+        board.undo_move();
+        (mv.clone(), score)
+    }).collect();
+    
+    moves.sort_by(|mv1, mv2|
+        scores.iter().find(|(mv, _)| mv1 == mv).unwrap().1
+        .total_cmp(&scores.iter().find(|(mv, _)| mv2 == mv).unwrap().1)
+    );
+}
+
+pub fn dfs_search(board: &mut Board, moves: Vec<Move>, depth: usize) -> Option<Move> {
     let mut best_move = None;
     let mut best_score = f64::MIN;
-    for mv in board.get_legal_moves() {
+    for mv in moves {
         board.make_move(&mv, true);
         let score = -negamax(board, depth - 1, f64::MIN, f64::MAX);
         board.undo_move();
@@ -30,8 +48,8 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
         return relative_score(board);
     }
 
-    let opts = board.get_legal_moves();
-    if opts.len() == 0 {
+    let moves = board.get_legal_moves();
+    if moves.len() == 0 {
         return if board.is_check() {
             f64::MIN
         } else {
@@ -40,7 +58,7 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     }
 
     let mut max = f64::MIN;
-    for mv in opts {
+    for mv in moves {
         board.make_move(&mv, true);
         let score = -negamax(board, depth - 1, -2.0 * beta, -2.0 * alpha) * 0.5;
         board.undo_move();

@@ -5,29 +5,38 @@ mod uci;
 
 use chess::Board;
 use engine::get_best_move;
-use uci::run_uci_mode;
 
 use std::time::Instant;
+use std::sync::LazyLock;
 
-use crate::{chess::Move, zobrist::ZobristHasher};
+use crate::{
+    chess::BoardState,
+    zobrist::ZobristHasher
+};
 
-fn play_vs_self(depth: usize) {
-    let mut board = Board::default();
+fn play_vs_self(board: &mut Board, depth: usize) {
     while board.is_live() {
-        match get_best_move(&mut board, depth) {
+        match get_best_move(board, depth) {
             Some(mv) => {
                 println!("{}", mv.uci());
                 board.make_move(&mv, false);
                 println!("{}", board);
+                // println!("{:?}", board);
             },
             None => {
-                println!("this should not happen -- no moves but game is live?");
-                println!("{}", board.get_fen());
-                return;
+                break;
             }
         }
     }
-    println!("ggs - game no longer live");
+    match board.get_state() {
+        BoardState::WhiteWin => println!("white wins!"),
+        BoardState::BlackWin => println!("black wins!"),
+        BoardState::Stalemate => println!("stalemate"),
+        BoardState::ThreefoldRepetition => println!("threefold repetition"),
+        BoardState::FiftyMoveRule => println!("fifty move rule"),
+        BoardState::InsufficientMaterial => println!("insufficient material"),
+        BoardState::Live => unreachable!()
+    };
     println!("{}", board.get_fen());
 }
 
@@ -61,21 +70,54 @@ fn best_move_of_input() {
     }
 }
 
-static ZOBRIST_HASHER: std::sync::LazyLock<ZobristHasher> = std::sync::LazyLock::new(|| ZobristHasher::new(1231234123));
+static ZOBRIST_HASHER: LazyLock<ZobristHasher> = LazyLock::new(|| ZobristHasher::new(234234543));
 
 fn main() {
-    run_uci_mode();
+    let mut board = Board::default();
+
+    // board.make_move(&Move::from_uci("f5f2", &board).unwrap(), false);
+    // println!("f5f2\n{}", board);
+
+    // for mv in board.get_legal_moves() {
+    //     println!("{:?}", mv);
+    // }
+
+    play_vs_self(&mut board, 5);
+
+    // let next_mv = Move { from: Coord { y: 4, x: 3 }, to: Coord { y: 6, x: 4 }, move_type: MoveType::Basic };
+    // println!("{}", board.get_legal_moves().contains(&next_mv));
+
+    // board.make_move(, true);
+    // println!("{}", board);
+    // board.make_move(&Move { from: Coord { y: 4, x: 6 }, to: Coord { y: 3, x: 6 }, move_type: MoveType::Basic }, true);
+    // println!("{}", board);
+    // run_uci_mode();
 
     // best_move_of_input();
-    // play_vs_self(5);
+    // play_vs_self(&mut board, 5);
 
     // let mut board = Board::from_fen("r1b1kbnr/pppp1ppp/2n5/4p3/3P4/2N1Bq2/PPP1PPPP/R2QKB1R w KQkq - 0 5").unwrap();
     // for mv in board.get_legal_moves() {
     //     println!("{}", mv.uci());
     // }
-
-    // uci::setup_uci_engine();
 }
 
 // start
 // rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+
+// 1q6/1p4pk/3p3p/2p1pr2/2P2n2/2P1BN1P/1P3PP1/3R1K2 b - - 0 1
+
+/*
+undo_stack: [
+UndoData {
+    mv: Move { from: Coord { y: 6, x: 6 }, to: Coord { y: 4, x: 6 }, move_type: Basic },
+    captured: None,
+    en_passant: None,
+    allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false },
+    halfmove_count: 6
+},
+UndoData { mv: Move { from: Coord { y: 4, x: 3 }, to: Coord { y: 6, x: 4 }, move_type: Basic }, captured: None, en_passant: Some(Coord { y: 5, x: 6 }), allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false }, halfmove_count: 0 },
+UndoData { mv: Move { from: Coord { y: 6, x: 6 }, to: Coord { y: 7, x: 5 }, move_type: Promotion(Rook) }, captured: Some(Piece { piece_type: King, color: White }), en_passant: None, allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false }, halfmove_count: 1 },
+UndoData { mv: Move { from: Coord { y: 4, x: 6 }, to: Coord { y: 3, x: 6 }, move_type: Basic }, captured: None, en_passant: None, allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false }, halfmove_count: 0 }
+]
+*/

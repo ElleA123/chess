@@ -423,6 +423,8 @@ impl Board {
     }
 
     pub fn get_legal_moves(&mut self) -> Vec<Move> {
+        if !self.is_live() { return Vec::new(); }
+
         let mut moves = Vec::with_capacity(80);
         let piece_coords: Vec<Coord> = self.find_players_pieces(self.side_to_move).collect();
         for coord in piece_coords {
