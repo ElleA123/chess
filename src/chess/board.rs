@@ -1,4 +1,5 @@
 use crate::chess::piece::Color;
+use crate::ZOBRIST_HASHER;
 
 use super::piece::{Piece, PieceType};
 use super::mv::{Move, MoveType};
@@ -30,26 +31,25 @@ pub enum BoardState {
 
 #[derive(Debug, Clone, PartialEq)]
 struct UndoData {
-    from: Coord,
-    to: Coord,
-    move_type: MoveType,
+    mv: Move,
     captured: Option<Piece>,
     en_passant: Option<Coord>,
     allowed_castling: Castles,
     halfmove_count: u32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct Board {
     board: [[Option<Piece>; 8]; 8],
-    state: BoardState,
     side_to_move: Color,
     allowed_castling: Castles, // KQkq
     en_passant: Option<Coord>,
     halfmove_count: u32,
     fullmove_num: u32,
+    state: BoardState,
     undo_stack: Vec<UndoData>,
     history: Vec<u64>,
+    // hasher: Arc<ZobristHasher> // theres probably a reason i should do this but idk it
 }
 
 const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
@@ -142,24 +142,26 @@ impl Board {
         let Ok(fullmove_num) = fullmove_num.parse::<u32>() else { return None; };
 
         if fen_fields.count() == 0 {
-            Some(Board {
+            let mut full = Self {
                 board,
-                state: BoardState::Live,
                 side_to_move,
                 allowed_castling,
                 en_passant,
                 halfmove_count,
                 fullmove_num,
+                state: BoardState::Live,
                 undo_stack: Vec::new(),
-                history: Vec::new()
-            })
+                history: Vec::new(),
+            };
+            full.history.push(ZOBRIST_HASHER.hash(&full)); 
+            Some(full)
         } else {
             None
         }
     }
 
     pub fn default() -> Self {
-        Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
+        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
     }
 
     pub fn get_fen(&self) -> String {
@@ -287,9 +289,7 @@ impl Board {
         // Add data to undo this move, or remove old undo data
         if undoable {
             self.undo_stack.push(UndoData {
-                from: mv.from,
-                to: mv.to,
-                move_type: mv.move_type,
+                mv: mv.clone(),
                 captured,
                 en_passant: self.en_passant,
                 allowed_castling: self.allowed_castling,
@@ -363,17 +363,26 @@ impl Board {
         } else {
             self.halfmove_count += 1;
         }
+
+        // Update board state (EXCEPT if stalemate, which is weird but seems fast)
+        self.update_state_post_move();
+
+        // Log new position in history
+        self.history.push(ZOBRIST_HASHER.hash(self));
     }
 
     pub fn undo_move(&mut self) {
         let Some(undo_data) = self.undo_stack.pop() else {return};
 
-        let Coord { y: from_y, x: from_x } = undo_data.from;
-        let Coord { y: to_y, x: to_x } = undo_data.to;
+        let Move { from: Coord { y: from_y, x: from_x }, to: Coord { y: to_y, x: to_x }, move_type } = undo_data.mv;
+
         let piece = self.board[to_y][to_x].unwrap();
 
+        // Delete current position from history
+        self.history.pop();
+
         // Swap
-        self.board[from_y][from_x] = if let MoveType::Promotion(_) = undo_data.move_type {
+        self.board[from_y][from_x] = if let MoveType::Promotion(_) = move_type {
             Some(Piece {
                 piece_type: PieceType::Pawn,
                 color: piece.color
@@ -383,14 +392,14 @@ impl Board {
         };
         self.board[to_y][to_x] = undo_data.captured;
 
-        if undo_data.move_type == MoveType::EnPassant {
+        if move_type == MoveType::EnPassant {
             self.board[from_y][to_x] = Some(Piece {
                 piece_type: PieceType::Pawn,
                 color: self.side_to_move
             });
         }
 
-        if undo_data.move_type == MoveType::Castle {
+        if move_type == MoveType::Castle {
             let (f_x, t_x) = if to_x == 6 {(7, 5)} else {(0, 3)};
             let extra_piece = self.board[to_y][t_x].unwrap();
             self.board[from_y][f_x] = Some(extra_piece);
@@ -424,8 +433,6 @@ impl Board {
         }
         moves
     }
-
-
 
     pub fn find_players_pieces<'a>(&'a self, color: Color) -> impl Iterator<Item = Coord> + 'a {
         COORDS.into_iter().filter(move |&c| self.square_is_color(c, color))
@@ -647,46 +654,92 @@ impl Board {
         self.king_is_attacked(self.side_to_move)
     }
 
-    // fn update_state_post_move(&mut self) {
-    //     if self.check_threefold_repetition() {
-    //         self.state = BoardState::ThreefoldRepetition;
-    //     } else
-    //     if self.halfmove_count >= 100 {
-    //         self.state = BoardState::FiftyMoveRule;
-    //     } else if self.check_insufficient_material() {
-    //         self.state = BoardState::InsufficientMaterial;
-    //     }
-    // }
+    fn update_state_post_move(&mut self) {
+        if self.halfmove_count >= 100 {
+            self.state = BoardState::FiftyMoveRule;
+        }
+        else if self.check_threefold_repetition() {
+            self.state = BoardState::ThreefoldRepetition;
+        }
+        else if self.check_insufficient_material() {
+            self.state = BoardState::InsufficientMaterial;
+        }
+    }
 
-    // fn get_attacks(&self, color: bool) -> Vec<Move> {
-    //     let mut attacks = Vec::new();
-    //     for coord in self.find_players_pieces(color) {
-    //         self.get_piece_moves(&coord, &mut attacks);
-    //     }
-    //     attacks
-    // }
+    fn check_threefold_repetition(&self) -> bool {
+        let Some(current) = self.history.last() else { return false; };
 
-    // fn check_threefold_repetition(&self) -> bool {
-    //     let Some(&curr_pos) = self.position_history.last() else { return false; };
-    //     let mut idx = self.position_history.len() - 1;
-    //     let mut count = 1;
-    //     loop {
-    //         if idx <= 2 {
-    //             break;
-    //         }
-    //         idx -= 2;
+        let mut count = 0;
+        for hash in self.history.iter().rev().step_by(2) {
+            if hash == current {
+                count += 1;
+            }
+            if count >= 3 {
+                return true;
+            }
+        }
+        return false;
+    }
 
-    //         if self.position_history[idx] == curr_pos {
-    //             count += 1;
-    //             if count == 3 {
-    //                 return true;
-    //             }
-    //         }
-    //     }
-    //     return false;
-    // }
+    fn check_insufficient_material(&self) -> bool {
+        let mut w_knights = 0;
+        let mut w_bishops = 0;
+        let mut w_bishop_sq_color = 0;
 
-    // fn check_insufficient_material(&self) -> bool {
-    //     return false; // do this
-    // }
+        for coord in self.find_players_pieces(Color::White) {
+            let piece_type = self.get_square(coord).unwrap().piece_type;
+            match piece_type {
+                PieceType::Rook => return false,
+                PieceType::Queen => return false,
+                PieceType::Pawn => return false,
+                PieceType::Knight => w_knights += 1,
+                PieceType::Bishop => {
+                    w_bishops += 1;
+                    w_bishop_sq_color = coord.idx() & 1;
+                },
+                PieceType::King => {}
+            };
+
+            if w_knights + w_bishops >= 2 {
+                return false;
+            }
+        }   
+
+        let mut b_knights = 0;
+        let mut b_bishops = 0;
+        let mut b_bishop_sq_color = 0;
+
+        for coord in self.find_players_pieces(Color::Black) {
+            let piece_type = self.get_square(coord).unwrap().piece_type;
+            match piece_type {
+                PieceType::Rook => return false,
+                PieceType::Queen => return false,
+                PieceType::Pawn => return false,
+                PieceType::Knight => b_knights += 1,
+                PieceType::Bishop => {
+                    b_bishops += 1;
+                    b_bishop_sq_color = coord.idx() & 1;
+                },
+                PieceType::King => {}
+            };
+
+            if b_knights + b_bishops >= 2 {
+                return false;
+            }
+
+            if b_knights >= 1 && w_knights + w_bishops >= 1 {
+                return false;
+            }
+
+            if b_bishops >= 1 && w_knights >= 1 {
+                return false;
+            }
+        }
+
+        if w_bishops == 1 && b_bishops == 1 && w_bishop_sq_color != b_bishop_sq_color {
+            return false;
+        }
+
+        return true;
+    }
 }

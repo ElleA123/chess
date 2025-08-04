@@ -22,9 +22,11 @@ impl Move {
         Move { from, to, move_type }
     }
 
-    pub fn from_uci(uci: &str, board: &Board) -> Self {
-        let from = Coord::from_san(&uci[0..2]).unwrap();
-        let to = Coord::from_san(&uci[2..4]).unwrap();
+    pub fn from_uci(uci: &str, board: &Board) -> Option<Self> {
+        if !uci.is_ascii() || uci.len() < 4 { return None; }
+
+        let from = Coord::from_san(&uci[0..2])?;
+        let to = Coord::from_san(&uci[2..4])?;
 
         let move_type = match board.get_square(from).unwrap().piece_type {
             PieceType::Pawn => {
@@ -32,7 +34,7 @@ impl Move {
                     if to == ep { MoveType::EnPassant } else { MoveType::Basic }
                 }
                 else if to.y == 0 || to.y == 7 {
-                    MoveType::Promotion(PieceType::from_ascii_char(uci.bytes().nth(4).unwrap()).unwrap())
+                    MoveType::Promotion(PieceType::from_char(uci.chars().nth(4)?)?)
                 }
                 else { MoveType::Basic }
             },
@@ -43,7 +45,7 @@ impl Move {
             _ => MoveType::Basic
         };
 
-        Self { from, to, move_type }
+        Some( Self { from, to, move_type } )
     }
 
     pub const fn promotions(from: Coord, to: Coord) -> [Self; 4] {

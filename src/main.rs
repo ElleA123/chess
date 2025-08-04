@@ -9,6 +9,8 @@ use uci::run_uci_mode;
 
 use std::time::Instant;
 
+use crate::{chess::Move, zobrist::ZobristHasher};
+
 fn play_vs_self(depth: usize) {
     let mut board = Board::default();
     while board.is_live() {
@@ -58,6 +60,8 @@ fn best_move_of_input() {
         None => print!("No moves!")
     }
 }
+
+static ZOBRIST_HASHER: std::sync::LazyLock<ZobristHasher> = std::sync::LazyLock::new(|| ZobristHasher::new(1231234123));
 
 fn main() {
     run_uci_mode();

@@ -1,26 +1,9 @@
 mod psts;
 
 use crate::chess::*;
-use psts::PSTS_MG;
-use pretty_assertions::{assert_eq, assert_ne};
 
 pub fn get_best_move(board: &mut Board, max_depth: usize) -> Option<Move> {
-    let mut best_move = None;
-    let mut best_score = f64::MIN;
-    for mv in board.get_legal_moves() {
-        board.make_move(&mv, true);
-        let score = -negamax(board, max_depth - 1, f64::MIN, f64::MAX);
-        board.undo_move();
-
-        if score == f64::MAX {
-            return Some(mv);
-        }
-        if score > best_score {
-            best_score = score;
-            best_move = Some(mv);
-        }
-    }
-    best_move
+    dfs_search(board, max_depth)
 }
 
 pub fn dfs_search(board: &mut Board, depth: usize) -> Option<Move> {
@@ -46,6 +29,7 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
     if depth == 0 {
         return relative_score(board);
     }
+
     let opts = board.get_legal_moves();
     if opts.len() == 0 {
         return if board.is_check() {
@@ -54,6 +38,7 @@ fn negamax(board: &mut Board, depth: usize, mut alpha: f64, beta: f64) -> f64 {
             0.0
         };
     }
+
     let mut max = f64::MIN;
     for mv in opts {
         board.make_move(&mv, true);
@@ -94,22 +79,6 @@ fn score_side(board: &Board, color: Color) -> f64 {
         };
         score += PST_FACTOR * psts::get_mg(piece, coord) as f64;
     }
-
-    // for coord in COORDS {
-    //     if let Some(piece) = board.get_square(coord) {
-    //         if piece.color == color {
-    //             score += MATERIAL_FACTOR * match piece.piece_type {
-    //                 PieceType::Rook => 5.,
-    //                 PieceType::Knight => 3.,
-    //                 PieceType::Bishop => 3.,
-    //                 PieceType::King => 0.,
-    //                 PieceType::Queen => 9.,
-    //                 PieceType::Pawn => 1.
-    //             };
-    //             score += PST_FACTOR * psts::get_mg(piece, coord) as f64;
-    //         }
-    //     }
-    // }
 
     score
 }

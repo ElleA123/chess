@@ -1,6 +1,6 @@
 use std::{thread, sync::mpsc};
 
-use crate::{chess::{Board, Move}, engine::get_best_move};
+use crate::{chess::{Board, Move, PieceType, Coord}, engine::get_best_move};
 
 #[derive(Debug, PartialEq)]
 enum UciCommand {
@@ -97,7 +97,7 @@ pub fn run_uci_mode() {
             UciCommand::Position { fen, moves } => {
                 board = Board::from_fen(&fen).unwrap();
                 for mv in moves {
-                    board.make_move(&Move::from_uci(&mv, &board), false);
+                    board.make_move(&Move::from_uci(&mv, &board).unwrap(), false);
                 }
                 println!("debug: set position to {}", board.get_fen());
             },
@@ -124,7 +124,7 @@ pub fn run_uci_mode() {
             } => {
                 let max_depth = depth.unwrap_or(usize::MAX).min(5);
                 let best_move = get_best_move(&mut board, max_depth).unwrap();
-                stdout_sender.send(UciResponse::BestMove(best_move.uci()));
+                stdout_sender.send(UciResponse::BestMove(best_move.uci())).expect("stdout error");
             },
             UciCommand::Stop => {
 
@@ -184,7 +184,11 @@ fn parse_uci_command(command: &str) -> Option<UciCommand> {
             while let Some(param) = words.next() {
                 optionless = false;
                 match param {
-                    "searchmoves" => todo!(),
+                    "searchmoves" => {
+                        for mv in (&mut words).take_while(|&word| is_uci_move(word)) {
+                            search_moves.push(mv.to_owned());
+                        }
+                    },
                     "ponder" => ponder = true,
                     "wtime" => parse_next_as_usize(&mut wtime, &mut words)?,
                     "btime" => parse_next_as_usize(&mut btime, &mut words)?,
@@ -226,6 +230,15 @@ fn parse_uci_command(command: &str) -> Option<UciCommand> {
         "quit" => Some(UciCommand::Quit),
         _ => None
     }
+}
+
+fn is_uci_move(word: &str) -> bool {
+    word.is_ascii()
+    && (
+        word.len() == 4
+        || word.len() == 5 && PieceType::from_ascii_char(word.as_bytes()[4]).is_some()
+    )
+    && Coord::from_san(&word[0..2]).is_some() && Coord::from_san(&word[2..4]).is_some()
 }
 
 fn parse_next_as_usize<'a>(var: &mut Option<usize>, words: &mut impl Iterator<Item = &'a str>) -> Option<()> {

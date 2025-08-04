@@ -9,11 +9,11 @@ pub const fn get_mg(piece: Piece, coord: Coord) -> isize {
     }
 }
 
-pub const fn flip(square: usize) -> usize {
+const fn flip(square: usize) -> usize {
     square ^ 56
 }
 
-pub static PSTS_MG: [[isize; 64]; 6] = [
+static PSTS_MG: [[isize; 64]; 6] = [
     // Rook
     [32,  42,  32,  51, 63,  9,  31,  43,
      27,  32,  58,  62, 80, 67,  26,  44,
