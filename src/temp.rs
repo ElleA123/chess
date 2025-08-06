@@ -22,7 +22,7 @@ const fn next_iter_time_guess(depth: usize) -> usize {
 pub struct SearchOptions {
     pub max_depth: usize,
     pub time: usize,
-    // pub search_moves: Option<Vec<Move>>,
+    pub search_moves: Option<Vec<Move>>,
     pub nodes: Option<usize>,
 }
 
@@ -49,10 +49,10 @@ pub fn decide_options(board: &mut Board, go_options: UciGoOptions) -> SearchOpti
 
     let time_bound_depth = {
         let mut depth = 0;
-        let mut total_time: usize = 0;
+        let mut total_time = 0;
         loop {
             depth += 1;
-            total_time = total_time.saturating_add(next_iter_time_guess(depth));
+            total_time += next_iter_time_guess(depth);
             if total_time >= time {
                 break;
             }
@@ -61,20 +61,36 @@ pub fn decide_options(board: &mut Board, go_options: UciGoOptions) -> SearchOpti
     };
     let max_depth = go_options.depth.unwrap_or(MAX_DEPTH).min(time_bound_depth).min(MAX_DEPTH);
 
+    let search_moves = go_options.search_moves.map(|v| v.into_iter()
+        .map(|uci| Move::from_uci(&uci, &board).unwrap())
+        .collect()
+    );
+
     let nodes = go_options.nodes;
 
     SearchOptions {
         max_depth,
         time,
+        search_moves,
         nodes,
     }
 }
 
-pub fn search_infinite(board: &mut Board, search_moves: Option<Vec<Move>>, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Result<Option<Move>, ()> {
+pub fn search_infinite(board: &mut Board, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Option<Move> {
+    todo!()
+}
+
+pub fn search(board: &mut Board, options: SearchOptions, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Result<Option<Move>, ()> {
+    // Search for the best move in a position using [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening)
+    let start_time = Instant::now();
+
+    let SearchOptions { max_depth, time, search_moves, nodes } = options;
+
     let mut moves = search_moves.unwrap_or(board.get_legal_moves());
-    let mut best_move = None;
-    let mut depth = 1;
-    loop {
+
+    let mut best_move: Option<Move> = None;
+
+    for depth in 1..max_depth {
         // Check for a halt command
         if let Ok(halt_cmd) = halt_receiver.try_recv() {
             match halt_cmd {
@@ -83,43 +99,7 @@ pub fn search_infinite(board: &mut Board, search_moves: Option<Vec<Move>>, halt_
             }
         }
 
-        // Search
-        let result = dfs_search_and_sort(board, &mut moves, &mut best_move, depth, Some(halt_receiver));
-        // Check for a halt command while searching
-        if let Err(halt_command) = result {
-            match halt_command {
-                HaltCommand::Stop => return Ok(best_move),
-                HaltCommand::Quit => return Err(())
-            }
-        }
-
-        depth += 1;
-    }
-}
-
-pub fn search(board: &mut Board, options: SearchOptions, search_moves: Option<Vec<Move>>, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>) -> Result<Option<Move>, ()> {
-    // Search for the best move in a position using [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening)
-    // If `halt_receiver` is `Some`, the search can end early if a `HaltCommand` is sent to the receiver. 
-    let start_time = Instant::now();
-
-    let SearchOptions { max_depth, time, nodes } = options;
-
-    let mut moves = search_moves.unwrap_or(board.get_legal_moves());
-
-    let mut best_move: Option<Move> = None;
-
-    for depth in 1..max_depth {
-        // Check for a halt command
-        if let Some(halt_receiver) = halt_receiver {
-            if let Ok(halt_cmd) = halt_receiver.try_recv() {
-                match halt_cmd {
-                    HaltCommand::Stop => return Ok(best_move),
-                    HaltCommand::Quit => return Err(())
-                }
-            }
-        }
-
-        // Check if we have time to do a search at this depth
+        // Check if we have time to do a search at this depth (TODO: do we need this after implementing stop?)
         if time.saturating_sub(start_time.elapsed().as_millis() as usize) < next_iter_time_guess(depth) {
             return Ok(best_move);
         }
@@ -140,12 +120,10 @@ pub fn search(board: &mut Board, options: SearchOptions, search_moves: Option<Ve
     }
 
     // Check for a halt command
-    if let Some(halt_receiver) = halt_receiver {
-        if let Ok(halt_cmd) = halt_receiver.try_recv() {
-            match halt_cmd {
-                HaltCommand::Stop => return Ok(best_move),
-                HaltCommand::Quit => return Err(())
-            }
+    if let Ok(halt_cmd) = halt_receiver.try_recv() {
+        match halt_cmd {
+            HaltCommand::Stop => return Ok(best_move),
+            HaltCommand::Quit => return Err(())
         }
     }
 
@@ -162,9 +140,7 @@ pub fn search(board: &mut Board, options: SearchOptions, search_moves: Option<Ve
     Ok(best_move)
 }
 
-fn dfs_search_and_sort(
-    board: &mut Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, depth: usize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
-) -> Result<(), HaltCommand> {
+fn dfs_search_and_sort(board: &mut Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, depth: usize, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Result<(), HaltCommand> {
     // Run depth-first search with a max depth of `depth` and sort `moves` from worst to best.
     // The function also updates `best_move` as soon as a better move is discovered; combined with move-sorting from previous iterations,
     // this means that `best_move` will have a reasonable move at any sufficiently late point in the search function.
@@ -174,14 +150,11 @@ fn dfs_search_and_sort(
     let mut scores = HashMap::new();
     for mv in moves.iter().cloned() {
         // Check for a halt command
-        if let Some(halt_receiver) = halt_receiver {
-            if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
-        }
+        if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
 
         board.make_move(&mv, true);
-        let result = negamax(board, depth - 1, -isize::MAX, isize::MAX, halt_receiver);
+        let score = -negamax(board, depth - 1, -isize::MAX, isize::MAX, halt_receiver)?;
         board.undo_move();
-        let score = -result?;
 
         if score > best_score {
             best_score = score;
@@ -206,32 +179,25 @@ fn dfs_search_and_sort(
     // }).collect();
 
     // Check for a halt command
-    if let Some(halt_receiver) = halt_receiver {
-        if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
-    }
+    if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
 
     moves.sort_by_key(|mv| -scores.get(mv).unwrap());
 
     Ok(())
 }
 
-fn dfs_search_final(
-    board: &mut Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, max_depth: usize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
-) -> Result<(), HaltCommand> {
+fn dfs_search_final(board: &mut Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, max_depth: usize, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Result<(), HaltCommand> {
     // Run depth-first search with a max depth of `depth`, utilizing alpha-beta pruning on the provided moves to maximize speed.
     let mut best_score = -isize::MAX;
     let mut alpha = -isize::MAX;
 
     for mv in moves {
         // Check for a halt command
-        if let Some(halt_receiver) = halt_receiver {
-            if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
-        }
+        if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
 
         board.make_move(&mv, true);
-        let result = negamax(board, max_depth - 1, -isize::MAX, -alpha, halt_receiver);
+        let score = -negamax(board, max_depth - 1, -isize::MAX, -alpha, halt_receiver)?;
         board.undo_move();
-        let score = -result?;
 
         if score > best_score {
             best_score = score;
@@ -249,9 +215,7 @@ fn dfs_search_final(
     Ok(())
 }
 
-fn negamax(
-    board: &mut Board, depth: usize, mut alpha: isize, beta: isize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
-) -> Result<isize, HaltCommand> {
+fn negamax(board: &mut Board, depth: usize, mut alpha: isize, beta: isize, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Result<isize, HaltCommand> {
     // Recursively find the a position's score using [negamax](https://www.chessprogramming.org/Negamax)
     if depth == 0 {
         return Ok(relative_score(board));
@@ -269,14 +233,11 @@ fn negamax(
     let mut max = -isize::MAX;
     for mv in moves {
         // Check for a halt command
-        if let Some(halt_receiver) = halt_receiver {
-            if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
-        }
+        if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
 
         board.make_move(&mv, true);
-        let result = negamax(board, depth - 1, -beta, -alpha, halt_receiver);
+        let score = -negamax(board, depth - 1, -beta, -alpha, halt_receiver)?;
         board.undo_move();
-        let score = -result?;
         if score > max {
             max = score;
             if score > alpha {

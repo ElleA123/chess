@@ -14,7 +14,7 @@ use crate::{
 
 fn play_vs_self(board: &mut Board, options: &SearchOptions) {
     while board.is_live() {
-        match engine::search(board, options.clone()) {
+        match engine::search(board, options.clone(), None, None).expect("No halts = no Err") {
             Some(mv) => {
                 println!("{}", mv.uci());
                 board.make_move(&mv, false);
@@ -54,7 +54,7 @@ fn best_move_of_input(options: SearchOptions) {
 
     let start = Instant::now();
 
-    let best_move = engine::search(&mut board, options);
+    let best_move = engine::search(&mut board, options, None, None).unwrap();
 
     println!("Time: {:?}", start.elapsed());
 
@@ -68,22 +68,20 @@ static ZOBRIST_HASHER: LazyLock<ZobristHasher> = LazyLock::new(|| ZobristHasher:
 
 fn main() {
     // let mut board = Board::from_fen("r1bqkb1r/ppp1pppp/2n2n2/3p1Q2/4P3/8/PPPP1PPP/RNB1KBNR w KQkq d6 0 4").unwrap();
-    let mut board = Board::default();
+    // let mut board = Board::default();
 
-    let options = SearchOptions {
-        max_depth: 5,
-        time: usize::MAX,
-        search_moves: None,
-        nodes: None,
-    };
+    // let options = SearchOptions {
+    //     max_depth: 5,
+    //     time: usize::MAX,
+    //     nodes: None,
+    // };
 
     // let best_move = engine::search(&mut board, options).unwrap();
-
     // println!("{}", best_move.uci());
 
-    best_move_of_input(options.clone());
+    // best_move_of_input(options.clone());
 
-    play_vs_self(&mut board, &options);
+    // play_vs_self(&mut board, &options);
 
     run_uci_mode();
 }

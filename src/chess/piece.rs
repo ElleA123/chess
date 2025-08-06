@@ -103,10 +103,6 @@ impl Piece {
             color: if c.is_ascii_uppercase() { Color::White } else { Color::Black }
         })
     }
-
-    pub const fn idx(&self) -> usize {
-        self.color as usize * 6 + self.piece_type as usize
-    }
 }
 
 impl std::fmt::Display for Piece {

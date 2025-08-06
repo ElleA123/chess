@@ -40,7 +40,7 @@ struct UndoData {
     halfmove_count: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Board {
     board: [[Option<Piece>; 8]; 8],
     side_to_move: Color,

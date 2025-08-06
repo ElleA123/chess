@@ -1,9 +1,5 @@
-use std::{thread, sync::mpsc};
-
-use crate::{
-    chess::{Board, Coord, Move, PieceType, START_POS_FEN},
-    engine
-};
+use std::{sync::mpsc, thread};
+use crate::{chess::{Board, Coord, Move, PieceType, START_POS_FEN}, engine};
 
 #[derive(Debug, PartialEq)]
 enum UciCommand {
@@ -22,6 +18,11 @@ enum UciCommand {
     },
     Stop,
     Quit,
+}
+
+pub enum HaltCommand {
+    Stop,
+    Quit
 }
 
 #[derive(Debug, PartialEq)]
@@ -56,6 +57,7 @@ enum UciResponse {
 pub fn run_uci_mode() {
     let (stdin_sender, stdin_receiver) = mpsc::channel();
     let (stdout_sender, stdout_receiver) = mpsc::channel();
+    let (halt_sender, halt_receiver) = mpsc::channel();
 
     // Input thread
     thread::spawn(move || {
@@ -67,7 +69,11 @@ pub fn run_uci_mode() {
                 .expect("failed to read line");
 
             if let Some(command) = parse_uci_command(&buf) {
-                stdin_sender.send(command).expect("stdin error");
+                match command {
+                    UciCommand::Stop => halt_sender.send(HaltCommand::Stop).expect("stdin error"),
+                    UciCommand::Quit => halt_sender.send(HaltCommand::Quit).expect("stdin error"),
+                    _ => stdin_sender.send(command).expect("stdin error")
+                }
             }
         }
     });
@@ -116,17 +122,28 @@ pub fn run_uci_mode() {
                 stdout_sender.send(UciResponse::IsReady).expect("stdout error");
             },
             UciCommand::Go { options } => {
+                let curr_board = board.clone();
+
+                println!("debug: received GoOptions {:?}", options);
+
+                let search_moves = options.search_moves.as_ref().map(|v| v.iter()
+                    .map(|uci| Move::from_uci(uci, &board).unwrap())
+                    .collect()
+                );
+
                 if options.infinite {
                     println!("debug: searching infinitely");
-                    engine::search_infinite(&mut board);
-                }
-                else {
-                    println!("debug: received GoOptions {:?}", options);
-                    let search_options = engine::decide_options(&mut board, options);
-                    println!("debug: decided search options {:?}", search_options);
-                    let best_move = engine::search(&mut board, search_options).unwrap();
+                    let Ok(Some(best_move)) = engine::search_infinite(&mut board, search_moves, &halt_receiver) else { return; };
                     stdout_sender.send(UciResponse::BestMove(best_move.uci())).expect("stdout error");
                 }
+                else {
+                    let search_options = engine::decide_options(&mut board, options);
+                    println!("debug: decided search options {:?}", search_options);
+                    let Ok(Some(best_move)) = engine::search(&mut board, search_options, search_moves, Some(&halt_receiver)) else { return; };
+                    stdout_sender.send(UciResponse::BestMove(best_move.uci())).expect("stdout error");
+                }
+
+                assert_eq!(curr_board, board);
             },
             UciCommand::Stop => {
 
