@@ -5,6 +5,8 @@ use super::piece::{Piece, PieceType};
 use super::mv::{Move, MoveType};
 use super::coord::{Coord, COORDS};
 
+pub const START_POS_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Castles {
     pub w_k: bool,
@@ -75,12 +77,13 @@ impl std::fmt::Display for Board {
 
 impl Board {
     pub fn from_fen(fen: &str) -> Option<Self> {
-        // TODO: look at
-        // TODO: reject non-ascii and check bytes
-        let mut fen_fields = fen.split(" ");
+        if !fen.is_ascii() || fen.is_empty() { return None; }
+
+        let [
+            pieces, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num
+        ] = fen.split(" ").collect::<Vec<_>>().try_into().ok()?;
 
         // Position
-        let Some(pieces) = fen_fields.next() else { return None; };
         let mut board: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
 
         // TODO: check for repeated numbers (e.g. "44") in fen
@@ -108,8 +111,7 @@ impl Board {
         }
         if y != 8 { return None; }
 
-        // Player to move
-        let Some(side_to_move) = fen_fields.next() else { return None; };
+        // Side to move
         let side_to_move = match side_to_move {
             "w" => Color::White,
             "b" => Color::Black,
@@ -117,7 +119,6 @@ impl Board {
         };
 
         // Castling avilability - TODO: add error handling
-        let Some(allowed_castling) = fen_fields.next() else { return None; };
         let allowed_castling = Castles {
             w_k: allowed_castling.contains("K"),
             w_q: allowed_castling.contains("Q"),
@@ -126,7 +127,6 @@ impl Board {
         };
 
         // En passant
-        let Some(en_passant) = fen_fields.next() else { return None; };
         let en_passant = match en_passant {
             "-" => None,
             square => match Coord::from_san(square) {
@@ -135,33 +135,28 @@ impl Board {
             }
         };
 
-        let Some(halfmove_count) = fen_fields.next() else { return None; };
+        // Halfmove count
         let Ok(halfmove_count) = halfmove_count.parse::<u32>() else { return None; };
-
-        let Some(fullmove_num) = fen_fields.next() else { return None; };
+        // Fullmove num
         let Ok(fullmove_num) = fullmove_num.parse::<u32>() else { return None; };
 
-        if fen_fields.count() == 0 {
-            let mut full = Self {
-                board,
-                side_to_move,
-                allowed_castling,
-                en_passant,
-                halfmove_count,
-                fullmove_num,
-                state: BoardState::Live,
-                undo_stack: Vec::new(),
-                history: Vec::new(),
-            };
-            full.history.push(ZOBRIST_HASHER.hash(&full)); 
-            Some(full)
-        } else {
-            None
-        }
+        let mut full = Self {
+            board,
+            side_to_move,
+            allowed_castling,
+            en_passant,
+            halfmove_count,
+            fullmove_num,
+            state: BoardState::Live,
+            undo_stack: Vec::new(),
+            history: Vec::new(),
+        };
+        full.history.push(ZOBRIST_HASHER.hash(&full)); 
+        Some(full)
     }
 
     pub fn default() -> Self {
-        Self::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap()
+        Self::from_fen(START_POS_FEN).unwrap()
     }
 
     pub fn get_fen(&self) -> String {
@@ -243,10 +238,6 @@ impl Board {
             Some(piece) => piece.piece_type == piece_type,
             None => false
         }
-    }
-
-    pub fn square_is_piece(&self, coord: Coord, color: Color, piece_type: PieceType) -> bool {
-        self.square_is_color(coord, color) && self.square_is_piece_type(coord, piece_type)
     }
 
     // pub fn square_is_piece(&self, coord: Coord, piece: &Piece) -> bool {

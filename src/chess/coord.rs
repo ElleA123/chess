@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Coord {
     pub y: usize,
     pub x: usize
@@ -8,10 +8,11 @@ const fn is_on_board(y: usize, x: usize) -> bool {
     y < 8 && x < 8
 }
 
-pub const COORDS: [Coord; 64] = {
-    let mut arr = [Coord::new(0, 0); 64];
+pub const NUM_COORDS: usize = 64;
+pub const COORDS: [Coord; NUM_COORDS] = {
+    let mut arr = [Coord::new(0, 0); NUM_COORDS];
     let mut i = 0;
-    while i < 64 {
+    while i < NUM_COORDS {
         arr[i].y = i / 8;
         arr[i].x = i % 8;
         i += 1;

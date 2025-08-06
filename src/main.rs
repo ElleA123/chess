@@ -4,24 +4,22 @@ mod engine;
 mod uci;
 
 use chess::Board;
-use engine::get_best_move;
 
 use std::time::Instant;
 use std::sync::LazyLock;
 
 use crate::{
-    chess::BoardState,
-    zobrist::ZobristHasher
+    chess::BoardState, engine::SearchOptions, uci::run_uci_mode, zobrist::ZobristHasher
 };
 
-fn play_vs_self(board: &mut Board, depth: usize) {
+fn play_vs_self(board: &mut Board, options: &SearchOptions) {
     while board.is_live() {
-        match get_best_move(board, depth) {
+        match engine::search(board, options.clone()) {
             Some(mv) => {
                 println!("{}", mv.uci());
                 board.make_move(&mv, false);
                 println!("{}", board);
-                // println!("{:?}", board);
+                println!("{}", board.get_fen());
             },
             None => {
                 break;
@@ -49,18 +47,14 @@ fn get_input(msg: &str) -> String {
     buf.trim().to_owned()
 }
 
-fn best_move_of_input() {
+fn best_move_of_input(options: SearchOptions) {
     let fen = get_input("Input FEN:");
     let Some(mut board) = Board::from_fen(fen.as_str()) else { panic!("invalid FEN"); };
     println!("{}", board);
 
-    let Ok(depth) = get_input("Search depth:")
-        .parse::<usize>() else { panic!("depth is not a natural number"); };
-    if depth == 0 { panic!("Not zero idiot"); }
-
     let start = Instant::now();
 
-    let best_move = get_best_move(&mut board, depth);
+    let best_move = engine::search(&mut board, options);
 
     println!("Time: {:?}", start.elapsed());
 
@@ -73,51 +67,28 @@ fn best_move_of_input() {
 static ZOBRIST_HASHER: LazyLock<ZobristHasher> = LazyLock::new(|| ZobristHasher::new(234234543));
 
 fn main() {
+    // let mut board = Board::from_fen("r1bqkb1r/ppp1pppp/2n2n2/3p1Q2/4P3/8/PPPP1PPP/RNB1KBNR w KQkq d6 0 4").unwrap();
     let mut board = Board::default();
 
-    // board.make_move(&Move::from_uci("f5f2", &board).unwrap(), false);
-    // println!("f5f2\n{}", board);
+    let options = SearchOptions {
+        max_depth: 5,
+        time: usize::MAX,
+        search_moves: None,
+        nodes: None,
+    };
 
-    // for mv in board.get_legal_moves() {
-    //     println!("{:?}", mv);
-    // }
+    // let best_move = engine::search(&mut board, options).unwrap();
 
-    play_vs_self(&mut board, 5);
+    // println!("{}", best_move.uci());
 
-    // let next_mv = Move { from: Coord { y: 4, x: 3 }, to: Coord { y: 6, x: 4 }, move_type: MoveType::Basic };
-    // println!("{}", board.get_legal_moves().contains(&next_mv));
+    best_move_of_input(options.clone());
 
-    // board.make_move(, true);
-    // println!("{}", board);
-    // board.make_move(&Move { from: Coord { y: 4, x: 6 }, to: Coord { y: 3, x: 6 }, move_type: MoveType::Basic }, true);
-    // println!("{}", board);
-    // run_uci_mode();
+    play_vs_self(&mut board, &options);
 
-    // best_move_of_input();
-    // play_vs_self(&mut board, 5);
-
-    // let mut board = Board::from_fen("r1b1kbnr/pppp1ppp/2n5/4p3/3P4/2N1Bq2/PPP1PPPP/R2QKB1R w KQkq - 0 5").unwrap();
-    // for mv in board.get_legal_moves() {
-    //     println!("{}", mv.uci());
-    // }
+    run_uci_mode();
 }
+
+// r1bqk2r/1ppp1ppp/5n2/p3p3/1bQnP3/3B3N/PPPP1PPP/RNB1K2R b KQkq - 3 7
 
 // start
 // rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
-
-// 1q6/1p4pk/3p3p/2p1pr2/2P2n2/2P1BN1P/1P3PP1/3R1K2 b - - 0 1
-
-/*
-undo_stack: [
-UndoData {
-    mv: Move { from: Coord { y: 6, x: 6 }, to: Coord { y: 4, x: 6 }, move_type: Basic },
-    captured: None,
-    en_passant: None,
-    allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false },
-    halfmove_count: 6
-},
-UndoData { mv: Move { from: Coord { y: 4, x: 3 }, to: Coord { y: 6, x: 4 }, move_type: Basic }, captured: None, en_passant: Some(Coord { y: 5, x: 6 }), allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false }, halfmove_count: 0 },
-UndoData { mv: Move { from: Coord { y: 6, x: 6 }, to: Coord { y: 7, x: 5 }, move_type: Promotion(Rook) }, captured: Some(Piece { piece_type: King, color: White }), en_passant: None, allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false }, halfmove_count: 1 },
-UndoData { mv: Move { from: Coord { y: 4, x: 6 }, to: Coord { y: 3, x: 6 }, move_type: Basic }, captured: None, en_passant: None, allowed_castling: Castles { w_k: false, w_q: false, b_k: false, b_q: false }, halfmove_count: 0 }
-]
-*/

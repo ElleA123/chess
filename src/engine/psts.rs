@@ -1,6 +1,6 @@
 // https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function
 
-use crate::chess::{Color, Coord, Piece};
+use crate::chess::{Color, Coord, Piece, NUM_COORDS, NUM_PIECE_TYPES};
 
 pub const fn get_mg(piece: Piece, coord: Coord) -> isize {
     match piece.color {
@@ -13,7 +13,7 @@ const fn flip(square: usize) -> usize {
     square ^ 56
 }
 
-static PSTS_MG: [[isize; 64]; 6] = [
+static PSTS_MG: [[isize; NUM_COORDS]; NUM_PIECE_TYPES] = [
     // Rook
     [32,  42,  32,  51, 63,  9,  31,  43,
      27,  32,  58,  62, 80, 67,  26,  44,

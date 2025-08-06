@@ -4,7 +4,7 @@ pub enum Color {
     Black
 }
 
-const NUM_COLORS: usize = 2;
+pub const NUM_COLORS: usize = 2;
 
 impl Color {
     pub const fn is_white(&self) -> bool {
@@ -32,7 +32,7 @@ impl std::ops::Not for Color {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PieceType {
     Rook,
     Knight,
@@ -42,7 +42,7 @@ pub enum PieceType {
     Pawn
 }
 
-const NUM_PIECE_TYPES: usize = 6;
+pub const NUM_PIECE_TYPES: usize = 6;
 
 impl PieceType {
     pub const fn from_char(c: char) -> Option<Self> {
@@ -87,7 +87,7 @@ pub struct Piece {
     pub color: Color
 }
 
-const NUM_PIECES: usize = NUM_COLORS * NUM_PIECE_TYPES;
+pub const NUM_PIECES: usize = NUM_COLORS * NUM_PIECE_TYPES;
 
 impl Piece {
     pub fn new(c: char) -> Option<Self> {

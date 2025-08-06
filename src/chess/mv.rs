@@ -2,7 +2,7 @@ use super::coord::Coord;
 use super::piece::PieceType;
 use super::board::Board;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MoveType {
     Basic,
     EnPassant,
@@ -10,7 +10,7 @@ pub enum MoveType {
     Promotion(PieceType)
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Move {
     pub from: Coord,
     pub to: Coord,
