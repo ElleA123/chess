@@ -44,7 +44,7 @@ struct UndoData {
 pub struct Board {
     board: [[Option<Piece>; 8]; 8],
     side_to_move: Color,
-    allowed_castling: Castles, // KQkq
+    allowed_castling: Castles,
     en_passant: Option<Coord>,
     halfmove_count: u32,
     fullmove_num: u32,
@@ -76,7 +76,9 @@ impl std::fmt::Display for Board {
 }
 
 impl Board {
-    pub fn from_fen(fen: &str) -> Option<Self> {
+    fn make_position(fen: &str) -> Option<(
+        [[Option<Piece>; 8]; 8], Color, Castles, Option<Coord>, u32, u32
+    )> {
         if !fen.is_ascii() || fen.is_empty() { return None; }
 
         let [
@@ -140,23 +142,125 @@ impl Board {
         // Fullmove num
         let Ok(fullmove_num) = fullmove_num.parse::<u32>() else { return None; };
 
-        let mut full = Self {
-            board,
-            side_to_move,
-            allowed_castling,
-            en_passant,
-            halfmove_count,
-            fullmove_num,
-            state: BoardState::Live,
-            undo_stack: Vec::new(),
-            history: Vec::new(),
-        };
-        full.history.push(ZOBRIST_HASHER.hash(&full)); 
-        Some(full)
+        Some((board, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num))
+    }
+
+    // pub fn from_fen(fen: &str) -> Option<Self> {
+    //     if !fen.is_ascii() || fen.is_empty() { return None; }
+
+    //     let [
+    //         pieces, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num
+    //     ] = fen.split(" ").collect::<Vec<_>>().try_into().ok()?;
+
+    //     // Position
+    //     let mut board: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
+
+    //     // TODO: check for repeated numbers (e.g. "44") in fen
+    //     let mut y = 0;
+    //     for rank in pieces.split("/") {
+    //         if y >= 8 { return None; }
+
+    //         let mut x = 0;
+    //         for p in rank.chars() {
+    //             if x >= 8 { return None; }
+
+    //             if let Some(piece) = Piece::new(p) {
+    //                 board[y][x] = Some(piece);
+    //                 x += 1;
+    //             }
+    //             else if p.is_ascii_digit() && p != '0' {
+    //                 x += p.to_digit(10).unwrap() as usize;
+    //             }
+    //             else {
+    //                 return None;
+    //             }
+    //         }
+    //         if x != 8 { return None; }
+    //         y += 1;
+    //     }
+    //     if y != 8 { return None; }
+
+    //     // Side to move
+    //     let side_to_move = match side_to_move {
+    //         "w" => Color::White,
+    //         "b" => Color::Black,
+    //         _ => return None
+    //     };
+
+    //     // Castling avilability - TODO: add error handling
+    //     let allowed_castling = Castles {
+    //         w_k: allowed_castling.contains("K"),
+    //         w_q: allowed_castling.contains("Q"),
+    //         b_k: allowed_castling.contains("k"),
+    //         b_q: allowed_castling.contains("q"),
+    //     };
+
+    //     // En passant
+    //     let en_passant = match en_passant {
+    //         "-" => None,
+    //         square => match Coord::from_san(square) {
+    //             Some(c) => Some(c),
+    //             None => { return None; }
+    //         }
+    //     };
+
+    //     // Halfmove count
+    //     let Ok(halfmove_count) = halfmove_count.parse::<u32>() else { return None; };
+    //     // Fullmove num
+    //     let Ok(fullmove_num) = fullmove_num.parse::<u32>() else { return None; };
+
+    //     let mut full = Self {
+    //         board,
+    //         side_to_move,
+    //         allowed_castling,
+    //         en_passant,
+    //         halfmove_count,
+    //         fullmove_num,
+    //         state: BoardState::Live,
+    //         undo_stack: Vec::new(),
+    //         history: Vec::new(),
+    //     };
+    //     full.history.push(ZOBRIST_HASHER.hash(&full)); 
+    //     Some(full)
+    // }
+
+    pub fn new(fen: &str) -> Option<Self> {
+        Self::make_position(fen).map(
+            |(board, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num)|
+            Self {
+                board,
+                side_to_move,
+                allowed_castling,
+                en_passant,
+                halfmove_count,
+                fullmove_num,
+                state: BoardState::Live,
+                undo_stack: Vec::new(),
+                history: Vec::new(),
+            }
+        )
     }
 
     pub fn default() -> Self {
-        Self::from_fen(START_POS_FEN).unwrap()
+        Self::new(START_POS_FEN).unwrap()
+    }
+
+    pub fn set_position(&mut self, fen: &str) {
+        // Set position without reallocating undo_stack and history.
+        // Why not? :)
+        let Some(
+            (board, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num)
+        ) = Self::make_position(fen) else { return; };
+        
+        self.board = board;
+        self.side_to_move = side_to_move;
+        self.allowed_castling = allowed_castling;
+        self.en_passant = en_passant;
+        self.halfmove_count = halfmove_count;
+        self.fullmove_num = fullmove_num;
+        self.state = BoardState::Live;
+        self.undo_stack.clear();
+        self.history.clear();
     }
 
     pub fn get_fen(&self) -> String {

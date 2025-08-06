@@ -109,7 +109,7 @@ pub fn run_uci_mode() {
                 todo!()
             },
             UciCommand::Position { fen, moves } => {
-                board = Board::from_fen(&fen).unwrap();
+                board.set_position(&fen);
                 for mv in moves {
                     board.make_move(&Move::from_uci(&mv, &board).unwrap(), false);
                 }

@@ -49,7 +49,7 @@ fn get_input(msg: &str) -> String {
 
 fn best_move_of_input(options: SearchOptions) {
     let fen = get_input("Input FEN:");
-    let Some(mut board) = Board::from_fen(fen.as_str()) else { panic!("invalid FEN"); };
+    let Some(mut board) = Board::new(fen.as_str()) else { panic!("invalid FEN"); };
     println!("{}", board);
 
     let start = Instant::now();
