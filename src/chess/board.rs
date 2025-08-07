@@ -1,13 +1,12 @@
-use crate::chess::piece::Color;
 use crate::ZOBRIST_HASHER;
 
-use super::piece::{Piece, PieceType};
+use super::piece::{Color, PieceType, Piece};
 use super::mv::{Move, MoveType};
 use super::coord::{Coord, COORDS};
 
 pub const START_POS_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Castles {
     pub w_k: bool,
     pub w_q: bool,
@@ -31,7 +30,7 @@ pub enum BoardState {
     InsufficientMaterial
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 struct UndoData {
     mv: Move,
     captured: Option<Piece>,
@@ -40,7 +39,7 @@ struct UndoData {
     halfmove_count: u32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct Board {
     board: [[Option<Piece>; 8]; 8],
     side_to_move: Color,

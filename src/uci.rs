@@ -72,8 +72,9 @@ pub fn run_uci_mode() {
                 match command {
                     UciCommand::Stop => halt_sender.send(HaltCommand::Stop).expect("stdin error"),
                     UciCommand::Quit => halt_sender.send(HaltCommand::Quit).expect("stdin error"),
-                    _ => stdin_sender.send(command).expect("stdin error")
-                }
+                    _ => {}
+                };
+                stdin_sender.send(command).expect("stdin error");
             }
         }
     });
@@ -122,9 +123,10 @@ pub fn run_uci_mode() {
                 stdout_sender.send(UciResponse::IsReady).expect("stdout error");
             },
             UciCommand::Go { options } => {
-                let curr_board = board.clone();
-
                 println!("debug: received GoOptions {:?}", options);
+
+                // Clear any previous 'stop' commands
+                while let Ok(_) = halt_receiver.try_recv() {};
 
                 let search_moves = options.search_moves.as_ref().map(|v| v.iter()
                     .map(|uci| Move::from_uci(uci, &board).unwrap())
@@ -137,13 +139,11 @@ pub fn run_uci_mode() {
                     stdout_sender.send(UciResponse::BestMove(best_move.uci())).expect("stdout error");
                 }
                 else {
-                    let search_options = engine::decide_options(&mut board, options);
+                    let search_options = engine::decide_options(&mut board, &options);
                     println!("debug: decided search options {:?}", search_options);
                     let Ok(Some(best_move)) = engine::search(&mut board, search_options, search_moves, Some(&halt_receiver)) else { return; };
                     stdout_sender.send(UciResponse::BestMove(best_move.uci())).expect("stdout error");
                 }
-
-                assert_eq!(curr_board, board);
             },
             UciCommand::Stop => {
 

@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "checkmate_detector"
+name = "chess"
 version = "0.1.0"
 dependencies = [
  "pretty_assertions",

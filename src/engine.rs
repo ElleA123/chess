@@ -14,6 +14,7 @@ const fn next_iter_time_guess(depth: usize) -> usize {
         3 => 50,
         4 => 250,
         5 => 1500,
+        6 => 2500,
         _ => usize::MAX
     }
 }
@@ -26,7 +27,7 @@ pub struct SearchOptions {
     pub nodes: Option<usize>,
 }
 
-pub fn decide_options(board: &mut Board, go_options: UciGoOptions) -> SearchOptions {
+pub fn decide_options(board: &mut Board, go_options: &UciGoOptions) -> SearchOptions {
     let time;
     if let Some(move_time) = go_options.move_time {
         time = move_time;
@@ -97,7 +98,9 @@ pub fn search_infinite(board: &mut Board, search_moves: Option<Vec<Move>>, halt_
     }
 }
 
-pub fn search(board: &mut Board, options: SearchOptions, search_moves: Option<Vec<Move>>, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>) -> Result<Option<Move>, ()> {
+pub fn search(
+    board: &mut Board, options: SearchOptions, search_moves: Option<Vec<Move>>, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
+) -> Result<Option<Move>, ()> {
     // Search for the best move in a position using [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening)
     // If `halt_receiver` is `Some`, the search can end early if a `HaltCommand` is sent to the receiver. 
     let start_time = Instant::now();
@@ -190,20 +193,6 @@ fn dfs_search_and_sort(
 
         scores.insert(mv, score);
     }
-
-
-    // let scores: HashMap<_, _> = moves.iter().cloned().map(|mv| {
-    //     board.make_move(&mv, true);
-    //     let score = -negamax(board, depth - 1, -isize::MAX, isize::MAX);
-    //     board.undo_move();
-
-    //     if score > best_score {
-    //         best_score = score;
-    //         *best_move = Some(mv.clone());
-    //     }
-
-    //     (mv, score)
-    // }).collect();
 
     // Check for a halt command
     if let Some(halt_receiver) = halt_receiver {
