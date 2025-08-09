@@ -126,7 +126,7 @@ pub fn run_uci_mode() {
                 println!("debug: received GoOptions {:?}", options);
 
                 // Clear any previous 'stop' commands
-                while let Ok(_) = halt_receiver.try_recv() {};
+                while halt_receiver.try_recv().is_ok() {};
 
                 let search_moves = options.search_moves.as_ref().map(|v| v.iter()
                     .map(|uci| Move::from_uci(uci, &board).unwrap())
