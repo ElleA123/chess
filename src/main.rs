@@ -3,14 +3,15 @@ mod zobrist;
 mod engine;
 mod uci;
 
-use chess::Board;
+mod bchess;
 
 use std::time::Instant;
 use std::sync::LazyLock;
 
-use crate::{
-    chess::BoardState, engine::SearchOptions, uci::run_uci_mode, zobrist::ZobristHasher
-};
+use crate::chess::{Board, BoardState};
+use crate::engine::SearchOptions;
+use crate::uci::run_uci_mode;
+use crate::zobrist::ZobristHasher;
 
 fn play_vs_self(board: &mut Board, options: &SearchOptions) {
     while board.is_live() {
@@ -83,7 +84,20 @@ fn main() {
 
     // play_vs_self(&mut board, &options);
 
-    run_uci_mode();
+    // run_uci_mode();
+
+    let mut board = bchess::board::Board::default();
+    board.make_move(&bchess::mv::Move::from_uci("e2e4", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("g8f6", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("e4e5", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("d7d5", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("e5d6", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("e7e6", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("d6c7", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("f8e7", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("c7b8Q", &board).unwrap(), false);
+    board.make_move(&bchess::mv::Move::from_uci("e8g8", &board).unwrap(), false);
+    println!("{}", board)
 }
 
 // r1bqk2r/1ppp1ppp/5n2/p3p3/1bQnP3/3B3N/PPPP1PPP/RNB1K2R b KQkq - 3 7

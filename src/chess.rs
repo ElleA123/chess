@@ -1,7 +1,7 @@
-mod piece;
-mod coord;
-mod mv;
-mod board;
+pub mod piece;
+pub mod coord;
+pub mod mv;
+pub mod board;
 
 pub use self::{
     piece::{Color, PieceType, Piece, NUM_PIECE_TYPES},

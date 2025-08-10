@@ -5,6 +5,7 @@ pub enum Color {
 }
 
 pub const NUM_COLORS: usize = 2;
+pub const COLORS: [Color; 2] = [Color::White, Color::Black];
 
 impl Color {
     pub const fn is_white(&self) -> bool {
@@ -19,6 +20,10 @@ impl Color {
             Color::White => false,
             Color::Black => true
         }
+    }
+
+    pub const fn idx(self) -> usize {
+        self as usize
     }
 }
 
