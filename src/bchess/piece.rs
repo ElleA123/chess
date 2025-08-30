@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Piece {
     Rook,
     Knight,
@@ -14,6 +14,18 @@ pub const PIECES: [Piece; NUM_PIECES] = [
 ];
 
 impl Piece {
+    pub const fn from_idx(idx: usize) -> Self {
+        match idx {
+            0 => Piece::Rook,
+            1 => Piece::Knight,
+            2 => Piece::Bishop,
+            3 => Piece::Queen,
+            4 => Piece::King,
+            5 => Piece::Pawn,
+            _ => panic!("invalid idx")
+        }
+    }
+
     pub const fn idx(self) -> usize {
         self as usize
     }
@@ -46,12 +58,12 @@ impl Piece {
 impl std::fmt::Display for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
-            Piece::Rook => "R",
-            Piece::Knight => "N",
-            Piece::Bishop => "B",
-            Piece::Queen => "Q",
-            Piece::King => "K",
-            Piece::Pawn => "P",
+            Piece::Rook => "r",
+            Piece::Knight => "n",
+            Piece::Bishop => "b",
+            Piece::Queen => "q",
+            Piece::King => "k",
+            Piece::Pawn => "p",
         })
     }
 }

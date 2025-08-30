@@ -383,7 +383,7 @@ impl Board {
         self.update_state_post_move();
 
         // Log new position in history
-        self.history.push(ZOBRIST_HASHER.hash(self));
+        self.history.push(ZOBRIST_HASHER.get().unwrap().hash(self));
     }
 
     pub fn undo_move(&mut self) {

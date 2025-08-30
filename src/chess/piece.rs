@@ -21,10 +21,6 @@ impl Color {
             Color::Black => true
         }
     }
-
-    pub const fn idx(self) -> usize {
-        self as usize
-    }
 }
 
 impl std::ops::Not for Color {

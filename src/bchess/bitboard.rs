@@ -4,13 +4,18 @@ use crate::bchess::square::Square;
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Bitboard(u64);
+pub struct Bitboard(pub u64);
 
 impl Bitboard {
     pub const EMPTY: Bitboard = Bitboard(0);
 
     pub const fn from_square(square: Square) -> Self {
         Self(1 << square.idx())
+    }
+
+    pub fn to_square(self) -> Square {
+        assert_ne!(self, Bitboard::EMPTY);
+        Square::from_idx(self.0.trailing_zeros() as u8)
     }
 }
 
@@ -57,5 +62,26 @@ impl Not for Bitboard {
     type Output = Self;
     fn not(self) -> Self::Output {
         Self(!self.0)
+    }
+}
+
+impl Iterator for Bitboard {
+    type Item = Square;
+    fn next(&mut self) -> Option<Self::Item> {
+        if *self == Bitboard::EMPTY {
+            return None;
+        }
+
+        let square = Square::from_idx(self.0.trailing_zeros() as u8);
+        self.0 ^= 1 << self.0.trailing_zeros();
+        Some(square)
+    }
+}
+
+impl std::fmt::Display for Bitboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\n{}", self.0.to_be_bytes()
+            .map(|b| format!("{:08b}", b.reverse_bits()).replace("1", "#").replace("0", "."))
+            .join("\n"))
     }
 }

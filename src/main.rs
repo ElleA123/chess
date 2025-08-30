@@ -1,13 +1,20 @@
 mod chess;
 mod zobrist;
+mod prng;
 mod engine;
 mod uci;
 
 mod bchess;
+mod bengine;
 
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 use std::time::Instant;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Once, OnceLock};
 
+use crate::bchess::board::make_move;
+use crate::bchess::magic_tables;
 use crate::chess::{Board, BoardState};
 use crate::engine::SearchOptions;
 use crate::uci::run_uci_mode;
@@ -65,20 +72,36 @@ fn best_move_of_input(options: SearchOptions) {
     }
 }
 
-static ZOBRIST_HASHER: LazyLock<ZobristHasher> = LazyLock::new(|| ZobristHasher::new(234234543));
+pub static ZOBRIST_HASHER: OnceLock<ZobristHasher> = OnceLock::new();
+
+fn init_statics() {
+    ZOBRIST_HASHER.set(ZobristHasher::new(234234543)).map_err(|_| ()).expect("error initializing zobrist hash");
+    magic_tables::init_tables();
+}
 
 fn main() {
-    // let mut board = Board::from_fen("r1bqkb1r/ppp1pppp/2n2n2/3p1Q2/4P3/8/PPPP1PPP/RNB1KBNR w KQkq d6 0 4").unwrap();
-    // let mut board = Board::default();
+    init_statics();
 
-    // let options = SearchOptions {
-    //     max_depth: 5,
-    //     time: usize::MAX,
-    //     nodes: None,
-    // };
+    let fen = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
 
-    // let best_move = engine::search(&mut board, options).unwrap();
-    // println!("{}", best_move.uci());
+    let bboard = bchess::board::Board::new(fen).unwrap();
+    // bchess::board::gen_legal_moves(&bboard, &mut Vec::new()); // init magic
+
+    let start = Instant::now();
+    bchess::board::gen_legal_moves(&bboard, &mut Vec::new());
+    let elapsed = start.elapsed();
+
+    println!("bitboard time: {:?}", elapsed);
+
+    ///////////////////////////
+
+    let mut board = Board::new(fen).unwrap();
+
+    let start = Instant::now();
+    board.get_legal_moves();
+    let elapsed = start.elapsed();
+
+    println!("mailbox time: {:?}", elapsed);
 
     // best_move_of_input(options.clone());
 
@@ -86,18 +109,27 @@ fn main() {
 
     // run_uci_mode();
 
-    let mut board = bchess::board::Board::default();
-    board.make_move(&bchess::mv::Move::from_uci("e2e4", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("g8f6", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("e4e5", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("d7d5", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("e5d6", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("e7e6", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("d6c7", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("f8e7", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("c7b8Q", &board).unwrap(), false);
-    board.make_move(&bchess::mv::Move::from_uci("e8g8", &board).unwrap(), false);
-    println!("{}", board)
+    // let mut board = bchess::board::Board::default();
+    // // dbg!(board);
+
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("e2e4", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("g8f6", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("e4e5", &board).unwrap());
+
+    // let mut v = Vec::new();
+    // bchess::board::gen_legal_moves(&board, &mut v);
+    // for mv in &v {
+    //     println!("{}", mv.uci());
+    // }
+
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("d7d5", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("e5d6", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("e7e6", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("d6c7", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("f8e7", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("c7b8Q", &board).unwrap());
+    // board = bchess::board::make_move(&board, bchess::mv::Move::from_uci("e8g8", &board).unwrap());
+    // println!("{}", board)
 }
 
 // r1bqk2r/1ppp1ppp/5n2/p3p3/1bQnP3/3B3N/PPPP1PPP/RNB1K2R b KQkq - 3 7

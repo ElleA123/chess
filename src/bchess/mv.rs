@@ -1,6 +1,6 @@
 use crate::bchess::{board::Board, piece::Piece, square::{Rank, Square}};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MoveType {
     Basic,
     EnPassant,
@@ -9,11 +9,11 @@ pub enum MoveType {
     Promotion(Piece)
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Move {
-    from: Square,
-    to: Square,
-    move_type: MoveType
+    pub from: Square,
+    pub to: Square,
+    pub move_type: MoveType
 }
 
 impl Move {
@@ -51,17 +51,6 @@ impl Move {
         Some( Self { from, to, move_type } )
     }
 
-    pub const fn get_from(&self) -> Square { self.from }
-    pub const fn get_to(&self) -> Square { self.to }
-    pub const fn get_move_type(&self) -> MoveType { self.move_type }
-
-    pub const fn promotions(from: Square, to: Square) -> [Self; 4] {
-        [Move {from, to, move_type: MoveType::Promotion(Piece::Rook)},
-         Move {from, to, move_type: MoveType::Promotion(Piece::Knight)},
-         Move {from, to, move_type: MoveType::Promotion(Piece::Bishop)},
-         Move {from, to, move_type: MoveType::Promotion(Piece::Queen)}]
-    }
-
     pub fn uci(&self) -> String {
         format!("{}{}{}",
             self.from.to_string(),
@@ -72,6 +61,13 @@ impl Move {
                 String::new()
             }
         )
+    }
+
+    pub const fn promotions(from: Square, to: Square) -> [Self; 4] {
+        [Move {from, to, move_type: MoveType::Promotion(Piece::Rook)},
+         Move {from, to, move_type: MoveType::Promotion(Piece::Knight)},
+         Move {from, to, move_type: MoveType::Promotion(Piece::Bishop)},
+         Move {from, to, move_type: MoveType::Promotion(Piece::Queen)}]
     }
 }
 

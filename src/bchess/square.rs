@@ -29,6 +29,32 @@ impl File {
         assert!(b >= b'a' && b <= b'h');
         Self::from_u8(b - b'a')
     }
+
+    pub const fn left(self) -> Option<Self> {
+        match self {
+            File::A => None,
+            File::B => Some(File::A),
+            File::C => Some(File::B),
+            File::D => Some(File::C),
+            File::E => Some(File::D),
+            File::F => Some(File::E),
+            File::G => Some(File::F),
+            File::H => Some(File::G)
+        }
+    }
+
+    pub const fn right(self) -> Option<Self> {
+        match self {
+            File::A => Some(File::B),
+            File::B => Some(File::C),
+            File::C => Some(File::D),
+            File::D => Some(File::E),
+            File::E => Some(File::F),
+            File::F => Some(File::G),
+            File::G => Some(File::H),
+            File::H => None
+        }
+    }
 }
 
 #[repr(u8)]
@@ -61,8 +87,8 @@ impl Rank {
         Self::from_u8(b - b'1')
     }
 
-    pub const fn up(&self) -> Option<Self> {
-        match *self {
+    pub const fn up(self) -> Option<Self> {
+        match self {
             Rank::One => Some(Rank::Two),
             Rank::Two => Some(Rank::Three),
             Rank::Three => Some(Rank::Four),
@@ -74,8 +100,8 @@ impl Rank {
         }
     }
 
-    pub const fn down(&self) -> Option<Self> {
-        match *self {
+    pub const fn down(self) -> Option<Self> {
+        match self {
             Rank::One => None,
             Rank::Two => Some(Rank::One),
             Rank::Three => Some(Rank::Two),
@@ -103,11 +129,13 @@ impl Rank {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Square(u8);
 
+pub const NUM_SQUARES: usize = 64;
+
 impl Square {
-    pub const fn new(square: u8) -> Self {
+    pub const fn from_idx(square: u8) -> Self {
         assert!(square < 64);
         Self(square)
     }
@@ -140,12 +168,64 @@ impl Square {
         self.0 as usize
     }
 
+    pub const fn up(&self) -> Option<Self> {
+        match self.rank().up() {
+            Some(rank) => Some(Self::from_coords(self.file(), rank)),
+            None => None
+        }
+    }
+
+    pub const fn down(&self) -> Option<Self> {
+        match self.rank().down() {
+            Some(rank) => Some(Self::from_coords(self.file(), rank)),
+            None => None
+        }
+    }
+
+    pub const fn left(&self) -> Option<Self> {
+        match self.file().left() {
+            Some(file) => Some(Self::from_coords(file, self.rank())),
+            None => None
+        }
+    }
+
+    pub const fn right(&self) -> Option<Self> {
+        match self.file().right() {
+            Some(file) => Some(Self::from_coords(file, self.rank())),
+            None => None
+        }
+    }
+
+    pub const fn forward(&self, color: Color) -> Option<Self> {
+        match self.rank().forward(color) {
+            Some(rank) => Some(Self::from_coords(self.file(), rank)),
+            None => None
+        }
+    }
+
     pub const fn backward(&self, color: Color) -> Option<Self> {
         match self.rank().backward(color) {
             Some(rank) => Some(Self::from_coords(self.file(), rank)),
             None => None
         }
     }
+
+    pub const A1: Self = Self::from_coords(File::A, Rank::One);
+    pub const B1: Self = Self::from_coords(File::B, Rank::One);
+    pub const C1: Self = Self::from_coords(File::C, Rank::One);
+    pub const D1: Self = Self::from_coords(File::D, Rank::One);
+    pub const E1: Self = Self::from_coords(File::E, Rank::One);
+    pub const F1: Self = Self::from_coords(File::F, Rank::One);
+    pub const G1: Self = Self::from_coords(File::G, Rank::One);
+    pub const H1: Self = Self::from_coords(File::H, Rank::One);
+    pub const A8: Self = Self::from_coords(File::A, Rank::Eight);
+    pub const B8: Self = Self::from_coords(File::B, Rank::Eight);
+    pub const C8: Self = Self::from_coords(File::C, Rank::Eight);
+    pub const D8: Self = Self::from_coords(File::D, Rank::Eight);
+    pub const E8: Self = Self::from_coords(File::E, Rank::Eight);
+    pub const F8: Self = Self::from_coords(File::F, Rank::Eight);
+    pub const G8: Self = Self::from_coords(File::G, Rank::Eight);
+    pub const H8: Self = Self::from_coords(File::H, Rank::Eight);
 }
 
 impl std::fmt::Display for Square {
