@@ -1,116 +1,145 @@
-use crate::ZOBRIST_HASHER;
-
-use super::piece::{Color, PieceType, Piece};
+use super::bitboard::Bitboard;
+use super::color::*;
+use super::magic_tables;
 use super::mv::{Move, MoveType};
-use super::coord::{Coord, COORDS};
+use super::piece::*;
+use super::square::*;
 
 pub const START_POS_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug, Clone, Copy)]
-pub struct Castles {
-    pub w_k: bool,
-    pub w_q: bool,
-    pub b_k: bool,
-    pub b_q: bool
+pub enum Castle {
+    WK = 1,
+    WQ = 2,
+    BK = 4,
+    BQ = 8
 }
 
-pub const CASTLE_W_K: Move = Move { from: Coord::new(7, 4), to: Coord::new(7, 6), move_type: MoveType::Castle };
-pub const CASTLE_W_Q: Move = Move { from: Coord::new(7, 4), to: Coord::new(7, 2), move_type: MoveType::Castle };
-pub const CASTLE_B_K: Move = Move { from: Coord::new(0, 4), to: Coord::new(0, 6), move_type: MoveType::Castle };
-pub const CASTLE_B_Q: Move = Move { from: Coord::new(0, 4), to: Coord::new(0, 2), move_type: MoveType::Castle };
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy)]
+pub struct Castles(u8);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BoardState {
-    Live,
-    WhiteWin,
-    BlackWin,
-    Stalemate,
-    ThreefoldRepetition,
-    FiftyMoveRule,
-    InsufficientMaterial
-}
+impl Castles {
+    pub const ALL: Self = Self(15);
+    pub const NONE: Self = Self(0);
 
-#[derive(Debug)]
-struct UndoData {
-    mv: Move,
-    captured: Option<Piece>,
-    en_passant: Option<Coord>,
-    allowed_castling: Castles,
-    halfmove_count: u32,
-}
+    #[inline]
+    pub const fn new(castles: u8) -> Self {
+        Self(castles)
+    }
 
-#[derive(Debug)]
-pub struct Board {
-    board: [[Option<Piece>; 8]; 8],
-    side_to_move: Color,
-    allowed_castling: Castles,
-    en_passant: Option<Coord>,
-    halfmove_count: u32,
-    fullmove_num: u32,
-    state: BoardState,
-    undo_stack: Vec<UndoData>,
-    history: Vec<u64>,
-    // hasher: Arc<ZobristHasher> // theres probably a reason i should do this but idk it
-}
+    #[inline]
+    pub const fn is_set(&self, castle: Castle) -> bool {
+        self.0 & castle as u8 != 0
+    }
 
-const R_STEPS: [(isize, isize); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
-const N_STEPS: [(isize, isize); 8] = [(2, 1), (2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2), (-2, 1), (-2, -1)];
-const B_STEPS: [(isize, isize); 4] = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
-const KQ_STEPS: [(isize, isize); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
+    #[inline]
+    pub const fn set(&mut self, castle: Castle) {
+        self.0 |= castle as u8;
+    }
 
-impl std::fmt::Display for Board {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::from("\n");
-        for row in self.board {
-            for cell in row {
-                s += (match cell {
-                    Some(p) => p.to_string(),
-                    None => String::from(".")
-                } + " ").as_str();
-            }
-            s += "\n";
-        }
-        write!(f, "{}", s)
+    #[inline]
+    pub const fn unset(&mut self, castle: Castle) {
+        self.0 &= !(castle as u8);
+    }
+
+    #[inline]
+    pub const fn idx(&self) -> usize {
+        self.0 as usize
     }
 }
 
+pub const CASTLE_WK_MOVE: Move = Move {
+    from: Square::E1,
+    to: Square::G1,
+    move_type: MoveType::Castle
+};
+pub const CASTLE_WQ_MOVE: Move = Move {
+    from: Square::E1,
+    to: Square::C1,
+    move_type: MoveType::Castle
+};
+pub const CASTLE_BK_MOVE: Move = Move {
+    from: Square::E8,
+    to: Square::G8,
+    move_type: MoveType::Castle
+};
+pub const CASTLE_BQ_MOVE: Move = Move {
+    from: Square::E8,
+    to: Square::C8,
+    move_type: MoveType::Castle
+};
+
+// #[derive(Debug, Clone, Copy, PartialEq)]
+// pub enum BoardState {
+//     Live,
+//     WhiteWin,
+//     BlackWin,
+//     Stalemate,
+//     ThreefoldRepetition,
+//     FiftyMoveRule,
+//     InsufficientMaterial
+// }
+
+// struct MoveUndoer {
+//     mv: Move,
+//     captured: Option<(Piece, Color)>,
+//     en_passant: Option<Square>,
+//     castling: Castles,
+//     halfmoves: u32
+// }
+
+#[derive(Clone, Copy)]
+pub struct Board {
+    pieces: [Bitboard; 6],
+    colors: [Bitboard; 2],
+    side_to_move: Color,
+    castles: Castles,
+    en_passant: Option<Square>,
+    halfmoves: u8,
+}
+
 impl Board {
-    fn make_position(fen: &str) -> Option<(
-        [[Option<Piece>; 8]; 8], Color, Castles, Option<Coord>, u32, u32
-    )> {
+    pub fn new(fen: &str) -> Option<Self> {
         if !fen.is_ascii() || fen.is_empty() { return None; }
 
         let [
-            pieces, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num
-        ] = fen.split(" ").collect::<Vec<_>>().try_into().ok()?;
+            board, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num
+        ] = fen.trim().split(" ").collect::<Vec<_>>().try_into().ok()?;
 
-        // Position
-        let mut board: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
+        // Board
+        let mut pieces = [Bitboard::EMPTY; NUM_PIECES];
+        let mut colors = [Bitboard::EMPTY; NUM_COLORS];
 
         // TODO: check for repeated numbers (e.g. "44") in fen
-        let mut y = 0;
-        for rank in pieces.split("/") {
-            if y >= 8 { return None; }
+        let mut rank = b'8';
+        for row in board.split("/") {
+            if rank < b'1' { return None; }
 
-            let mut x = 0;
-            for p in rank.chars() {
-                if x >= 8 { return None; }
+            let mut file = b'a';
+            for char in row.bytes() {
+                if file > b'h' { return None; }
 
-                if let Some(piece) = Piece::new(p) {
-                    board[y][x] = Some(piece);
-                    x += 1;
+                // Check if character is a number
+                if char >= b'1' && char <= b'8' {
+                    file += char - b'0';
                 }
-                else if p.is_ascii_digit() && p != '0' {
-                    x += p.to_digit(10).unwrap() as usize;
+                else if let Some(piece) = Piece::from_ascii(char) {
+                    let color = if char.is_ascii_uppercase() { Color::White } else { Color::Black };
+
+                    let bb = Bitboard::from_square(Square::from_coords(File::from_ascii(file), Rank::from_ascii(rank)));
+                    pieces[piece.idx()] ^= bb;
+                    colors[color.idx()] ^= bb;
+                    file += 1;
                 }
                 else {
                     return None;
                 }
             }
-            if x != 8 { return None; }
-            y += 1;
+            if file != b'i' { return None; }
+            rank -= 1;
         }
-        if y != 8 { return None; }
+        if rank != b'0' { return None; }
 
         // Side to move
         let side_to_move = match side_to_move {
@@ -120,643 +149,551 @@ impl Board {
         };
 
         // Castling avilability - TODO: add error handling
-        let allowed_castling = Castles {
-            w_k: allowed_castling.contains("K"),
-            w_q: allowed_castling.contains("Q"),
-            b_k: allowed_castling.contains("k"),
-            b_q: allowed_castling.contains("q"),
-        };
+        let mut castles = Castles::NONE;
+        if allowed_castling.contains("K") { castles.set(Castle::WK); }
+        if allowed_castling.contains("Q") { castles.set(Castle::WQ); }
+        if allowed_castling.contains("k") { castles.set(Castle::BK); }
+        if allowed_castling.contains("q") { castles.set(Castle::BQ); }
 
         // En passant
         let en_passant = match en_passant {
             "-" => None,
-            square => match Coord::from_san(square) {
-                Some(c) => Some(c),
-                None => { return None; }
-            }
+            san => Some(Square::from_san(san)?)
         };
 
         // Halfmove count
-        let Ok(halfmove_count) = halfmove_count.parse::<u32>() else { return None; };
+        let Ok(halfmoves) = halfmove_count.parse::<u8>() else { return None; };
         // Fullmove num
-        let Ok(fullmove_num) = fullmove_num.parse::<u32>() else { return None; };
+        let Ok(_) = fullmove_num.parse::<u32>() else { return None; };
 
-        Some((board, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num))
+        Some(Self { pieces, colors, side_to_move, castles, en_passant, halfmoves })
     }
 
-    pub fn new(fen: &str) -> Option<Self> {
-        Self::make_position(fen).map(
-            |(board, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num)|
-            Self {
-                board,
-                side_to_move,
-                allowed_castling,
-                en_passant,
-                halfmove_count,
-                fullmove_num,
-                state: BoardState::Live,
-                undo_stack: Vec::new(),
-                history: Vec::new(),
-            }
-        )
-    }
-
+    #[inline]
     pub fn default() -> Self {
         Self::new(START_POS_FEN).unwrap()
     }
 
-    pub fn set_position(&mut self, fen: &str) {
-        // Set position without reallocating undo_stack and history.
-        // Why not? :)
-        let Some(
-            (board, side_to_move, allowed_castling, en_passant, halfmove_count, fullmove_num)
-        ) = Self::make_position(fen) else { return; };
-        
-        self.board = board;
-        self.side_to_move = side_to_move;
-        self.allowed_castling = allowed_castling;
-        self.en_passant = en_passant;
-        self.halfmove_count = halfmove_count;
-        self.fullmove_num = fullmove_num;
-        self.state = BoardState::Live;
-        self.undo_stack.clear();
-        self.history.clear();
+    #[inline]
+    pub const fn get_piece(&self, piece: Piece) -> Bitboard {
+        self.pieces[piece.idx()]
     }
 
-    pub fn get_fen(&self) -> String {
-        let mut fen = String::with_capacity(90);
-        // Board
-        for y in 0..8 {
-            let mut gap = 0;
-            for x in 0..8 {
-                match self.board[y][x] {
-                    Some(p) => {
-                        if gap > 0 {
-                            fen += &gap.to_string();
-                            gap = 0;
-                        }
-                        fen += &p.to_string();
-                    },
-                    None => gap += 1
-                }
-            }
-            if gap > 0 {
-                fen += &gap.to_string();
-            }
-            if y != 7 {
-                fen += "/";
-            }
-        }
-
-        // Side to move
-        fen += if self.side_to_move.is_white() {" w "} else {" b "};
-
-        // Castling
-        let mut can_castle = false;
-        if self.allowed_castling.w_k { fen += "K"; can_castle = true; }
-        if self.allowed_castling.w_q { fen += "Q"; can_castle = true; }
-        if self.allowed_castling.b_k { fen += "k"; can_castle = true; }
-        if self.allowed_castling.b_q { fen += "q"; can_castle = true; }
-        if !can_castle { fen += "-"; }
-        fen += " ";
-
-        // En passant
-        match self.en_passant {
-            Some(c) => fen += &c.to_string(),
-            None => fen += "-"
-        };
-        fen += " ";
-
-        // Halfmove count & fullmove number
-        fen += &self.halfmove_count.to_string();
-        fen += " ";
-        fen += &self.fullmove_num.to_string();
-
-        return fen;
+    #[inline]
+    pub const fn get_color(&self, color: Color) -> Bitboard {
+        self.colors[color.idx()]
     }
 
-    pub const fn get_board(&self) -> &[[Option<Piece>; 8]; 8] {
-        &self.board
-        // let mut board = [[None; 8]; 8];
-        // for y in 0..8 {
-        //     for x in 0..8 {
-        //         board[y][x] = self.board[y][x].as_ref();
-        //     }
-        // }
-        // board
-    }
-
-    pub const fn get_square(&self, coord: Coord) -> Option<Piece> {
-        self.board[coord.y][coord.x]
-    }
-
-    pub fn square_is_color(&self, coord: Coord, color: Color) -> bool {
-        match self.get_square(coord) {
-            Some(piece) => piece.color == color,
-            None => false
-        }
-    }
-
-    pub fn square_is_piece_type(&self, coord: Coord, piece_type: PieceType) -> bool {
-        match self.get_square(coord) {
-            Some(piece) => piece.piece_type == piece_type,
-            None => false
-        }
-    }
-
-    // pub fn square_is_piece(&self, coord: Coord, piece: &Piece) -> bool {
-    //     self.square_is_color(coord, piece.color) && self.square_is_piece_type(coord, piece.piece_type)
-    // }
-
+    #[inline]
     pub const fn get_side_to_move(&self) -> Color {
         self.side_to_move
     }
 
-    pub const fn get_allowed_castling(&self) -> Castles {
-        self.allowed_castling
+    #[inline]
+    pub const fn get_castles(&self) -> Castles {
+        self.castles
     }
 
-    pub const fn get_en_passant(&self) -> Option<Coord> {
-        self.en_passant
-    }
+    pub fn get_piece_at(&self, square: Square) -> Option<Piece> {
+        let square = Bitboard::from_square(square);
 
-    pub const fn get_state(&self) -> BoardState {
-        self.state
-    }
-
-    pub const fn is_live(&self) -> bool {
-        match self.state {
-            BoardState::Live => true,
-            _ => false
+        if (self.pieces[Piece::Rook.idx()] | self.pieces[Piece::Knight.idx()] | self.pieces[Piece::Bishop.idx()]) & square != Bitboard::EMPTY {
+            if self.pieces[Piece::Rook.idx()] & square != Bitboard::EMPTY {
+                return Some(Piece::Rook);
+            }
+            if self.pieces[Piece::Knight.idx()] & square != Bitboard::EMPTY {
+                return Some(Piece::Knight);
+            }
+            return Some(Piece::Bishop);
         }
+        else if (self.pieces[Piece::Queen.idx()] | self.pieces[Piece::King.idx()] | self.pieces[Piece::Pawn.idx()]) & square != Bitboard::EMPTY {
+            if self.pieces[Piece::Queen.idx()] & square != Bitboard::EMPTY {
+                return Some(Piece::Queen);
+            }
+            if self.pieces[Piece::King.idx()] & square != Bitboard::EMPTY {
+                return Some(Piece::King);
+            }
+            return Some(Piece::Pawn);
+        }
+        return None;
+        // for (piece, bitboard) in PIECES.into_iter().zip(&self.pieces) {
+        //     if *bitboard & square != Bitboard::EMPTY {
+        //         return Some(piece);
+        //     }
+        // }
+        // None
     }
 
-    pub fn make_move(&mut self, mv: &Move, undoable: bool) {
-        if !self.is_live() { return; }
-        // Only legal moves should make it to this function
-        let Coord { y: from_y, x: from_x } = mv.from;
-        let Coord { y: to_y, x: to_x } = mv.to;
-        let piece = self.board[from_y][from_x].unwrap();
+    pub fn get_color_at(&self, square: Square) -> Option<Color> {
+        let square = Bitboard::from_square(square);
+        for color in COLORS {
+            if self.colors[color.idx()] & square != Bitboard::EMPTY {
+                return Some(color);
+            }
+        }
+        None
+    }
 
-        let captured = self.board[to_y][to_x];
-        let is_capture = captured.is_some() || mv.move_type == MoveType::EnPassant;
+    #[inline(always)]
+    pub const fn get_en_passant(&self) -> Option<Square> { self.en_passant }
 
-        // Add data to undo this move, or remove old undo data
-        if undoable {
-            self.undo_stack.push(UndoData {
-                mv: mv.clone(),
-                captured,
-                en_passant: self.en_passant,
-                allowed_castling: self.allowed_castling,
-                halfmove_count: self.halfmove_count
-            });
-        } else {
-            self.undo_stack.clear();
+    #[inline(always)]
+    pub fn blockers(&self) -> Bitboard {
+        self.colors[Color::White.idx()] | self.colors[Color::Black.idx()]
+    }
+
+    #[inline]
+    pub fn is_check(&self) -> bool {
+        self.pieces[Piece::King.idx()] & self.colors[(!self.side_to_move).idx()]
+        & gen_attacks(self, self.side_to_move, self.blockers()) != Bitboard::EMPTY
+    }
+}
+
+impl std::fmt::Display for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const fn write_piece(color: Color, piece: Piece) -> char {
+            match color {
+                Color::White => match piece {
+                    Piece::Rook => 'R',
+                    Piece::Knight => 'N',
+                    Piece::Bishop => 'B',
+                    Piece::Queen => 'Q',
+                    Piece::King => 'K',
+                    Piece::Pawn => 'P'
+                },
+                Color::Black => match piece {
+                    Piece::Rook => 'r',
+                    Piece::Knight => 'n',
+                    Piece::Bishop => 'b',
+                    Piece::Queen => 'q',
+                    Piece::King => 'k',
+                    Piece::Pawn => 'p'
+                },
+            }
         }
 
-        // Make the swap
-        self.board[to_y][to_x] = if let MoveType::Promotion(pt) = mv.move_type {
-            Some(Piece {
-                piece_type: pt,
-                color: piece.color,
-            })
-        } else {
-            Some(piece)
+        let mut s = String::new();
+        for rank in RANKS.into_iter().rev() {
+            for file in FILES {
+                let square = Square::from_coords(file, rank);
+                if let Some(color) = self.get_color_at(square) {
+                    let piece = self.get_piece_at(square).unwrap();
+                    s.push(write_piece(color, piece));
+                    s.push(' ');
+                } else {
+                    s += ". ";
+                }
+            }
+            s.push('\n');
+        }
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Debug for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rooks:{}\nknights:{}\nbishops:{}\nqueens:{}\nkings:{}\npawns:{}\nwhite:{}\nblack:{}\nside_to_move:{:?}\ncastles:{}{}{}{}\nen_passant:{:?}\nhalfmoves:{}",
+        self.pieces[Piece::Rook.idx()], self.pieces[Piece::Knight.idx()], self.pieces[Piece::Bishop.idx()], self.pieces[Piece::Queen.idx()], self.pieces[Piece::King.idx()], self.pieces[Piece::Pawn.idx()],
+        self.colors[Color::White.idx()], self.colors[Color::Black.idx()],
+        self.side_to_move,
+        if self.castles.is_set(Castle::WK) {"K"} else {""},
+        if self.castles.is_set(Castle::WQ) {"Q"} else {""},
+        if self.castles.is_set(Castle::BK) {"k"} else {""},
+        if self.castles.is_set(Castle::BQ) {"q"} else {""},
+        self.en_passant, self.halfmoves)
+    }
+}
+
+pub fn make_move(board: &Board, mv: Move) -> Board {
+    #[inline(always)]
+    fn xor(pieces: &mut [Bitboard; 6], colors: &mut [Bitboard; 2], bitboard: Bitboard, piece: Piece, color: Color) {
+        pieces[piece.idx()] ^= bitboard;
+        colors[color.idx()] ^= bitboard;
+    }
+
+    // Only legal moves should make it to this function
+    let from_bb = Bitboard::from_square(mv.from);
+    let to_bb = Bitboard::from_square(mv.to);
+
+    let piece = board.get_piece_at(mv.from).unwrap();
+    let captured = board.get_piece_at(mv.to);
+
+    // Make the swap
+    let mut pieces = board.pieces;
+    let mut colors = board.colors;
+
+    let end_piece = match mv.move_type {
+        MoveType::Promotion(to) => to,
+        _ => piece
+    };
+
+    xor(&mut pieces, &mut colors, from_bb, piece, board.side_to_move);
+    xor(&mut pieces, &mut colors, to_bb, end_piece, board.side_to_move);
+    if let Some(captured) = captured {
+        xor(&mut pieces, &mut colors, to_bb, captured, !board.side_to_move);
+    }
+
+    // Castling move
+    if mv.move_type == MoveType::Castle {
+        let [from_file, to_file] = match mv.to.file() {
+            File::C => [File::A, File::D],
+            File::G => [File::H, File::F],
+            _ => unreachable!()
         };
-        self.board[from_y][from_x] = None;
+        let rank = match board.side_to_move {
+            Color::White => Rank::One,
+            Color::Black => Rank::Eight
+        };
+        xor(&mut pieces, &mut colors, Bitboard::from_square(Square::from_coords(from_file, rank)), Piece::Rook, board.side_to_move);
+        xor(&mut pieces, &mut colors, Bitboard::from_square(Square::from_coords(to_file, rank)), Piece::Rook, board.side_to_move);
+    }
 
-        // En Passant
-        if mv.move_type == MoveType::EnPassant {
-            self.board[from_y][to_x] = None;
+    // En passant capture
+    if mv.move_type == MoveType::EnPassant {
+        xor(&mut pieces, &mut colors, Bitboard::from_square(
+            Square::from_coords(mv.to.file(), mv.from.rank())
+        ), Piece::Pawn, !board.side_to_move);
+    }
+
+    // Update turn
+    let side_to_move = !board.side_to_move;
+
+    // Update castles
+    const CASTLE_POINTS: Bitboard = Bitboard(
+        Bitboard::from_square(Square::A1).0 | Bitboard::from_square(Square::E1).0 | Bitboard::from_square(Square::H1).0 |
+        Bitboard::from_square(Square::A8).0 | Bitboard::from_square(Square::E8).0 | Bitboard::from_square(Square::H8).0
+    );
+
+    let mut castles = board.castles;
+
+    let move_bb = from_bb | to_bb;
+    if move_bb & CASTLE_POINTS != Bitboard::EMPTY {
+        if move_bb & Bitboard::from_square(Square::E1) != Bitboard::EMPTY {
+            castles.unset(Castle::WK);
+            castles.unset(Castle::WQ);
+        } else if move_bb & Bitboard::from_square(Square::E8) != Bitboard::EMPTY {
+            castles.unset(Castle::BK);
+            castles.unset(Castle::BQ);
+        }
+        else {
+            if move_bb & Bitboard::from_square(Square::H1) != Bitboard::EMPTY {
+                castles.unset(Castle::WK);
+            }
+            if move_bb & Bitboard::from_square(Square::A1) != Bitboard::EMPTY {
+                castles.unset(Castle::WQ);
+            }
+            if move_bb & Bitboard::from_square(Square::H8) != Bitboard::EMPTY {
+                castles.unset(Castle::BK);
+            }
+            if move_bb & Bitboard::from_square(Square::A8) != Bitboard::EMPTY {
+                castles.unset(Castle::BQ);
+            }
+        }
+    }
+
+    // Update en passant square
+    let en_passant = match mv.move_type {
+        MoveType::FirstPawnMove => Some(mv.to.backward(board.side_to_move).unwrap()),
+        _ => None
+    };
+
+    // Update halfmove count
+    let halfmoves = if piece == Piece::Pawn || captured.is_some() || mv.move_type == MoveType::EnPassant {
+        0
+    } else {
+        board.halfmoves + 1
+    };
+
+    Board {
+        pieces,
+        colors,
+        side_to_move,
+        castles,
+        en_passant,
+        halfmoves
+    }
+}
+
+pub fn gen_legal_moves(board: &Board, v: &mut Vec<Move>) {
+    let mut pseudolegals = Vec::new();
+    let blockers = board.blockers();
+
+    for piece in PIECES {
+        for square in board.pieces[piece.idx()] & board.colors[board.side_to_move.idx()] {
+            gen_piece_moves(board, piece, square, blockers, &mut pseudolegals);
+        }
+    }
+
+    // Legality check
+    v.extend(pseudolegals.into_iter()
+        .filter(|&mv| {
+            let board = make_move(board, mv);
+            board.pieces[Piece::King.idx()] & board.colors[(!board.side_to_move).idx()]
+            & gen_attacks(&board, board.side_to_move, board.blockers()) == Bitboard::EMPTY
+        })
+    );
+}
+
+fn gen_piece_moves(board: &Board, piece: Piece, square: Square, blockers: Bitboard, v: &mut Vec<Move>) {
+    match piece {
+        Piece::Rook => {
+            v.extend(magic_tables::get_rook_moves(square, blockers)
+                .filter(|&to| board.colors[board.side_to_move.idx()] & Bitboard::from_square(to) == Bitboard::EMPTY)
+                .map(|to| Move { from: square, to, move_type: MoveType::Basic })
+            );
+        },
+        Piece::Knight => {
+            v.extend(KNIGHT_MOVES[square.idx()]
+                .filter(|&to| board.colors[board.side_to_move.idx()] & Bitboard::from_square(to) == Bitboard::EMPTY)
+                .map(|to| Move { from: square, to, move_type: MoveType::Basic })
+            );
+        },
+        Piece::Bishop => {
+            v.extend(magic_tables::get_bishop_moves(square, blockers)
+                .filter(|&to| board.colors[board.side_to_move.idx()] & Bitboard::from_square(to) == Bitboard::EMPTY)
+                .map(|to| Move { from: square, to, move_type: MoveType::Basic })
+            );
+        },
+        Piece::Queen => {
+            v.extend(magic_tables::get_queen_moves(square, blockers)
+                .filter(|&to| board.colors[board.side_to_move.idx()] & Bitboard::from_square(to) == Bitboard::EMPTY)
+                .map(|to| Move { from: square, to, move_type: MoveType::Basic })
+            );
+        },
+        Piece::King => {
+            v.extend(KING_MOVES[square.idx()]
+                .filter(|&to| board.colors[board.side_to_move.idx()] & Bitboard::from_square(to) == Bitboard::EMPTY)
+                .map(|to| Move { from: square, to, move_type: MoveType::Basic })
+            );
+
+            const CASTLE_WK_EMPTY: Bitboard = Bitboard(Bitboard::from_square(Square::F1).0 | Bitboard::from_square(Square::G1).0);
+            const CASTLE_WQ_EMPTY: Bitboard = Bitboard(Bitboard::from_square(Square::B1).0 | Bitboard::from_square(Square::C1).0 | Bitboard::from_square(Square::D1).0);
+            const CASTLE_BK_EMPTY: Bitboard = Bitboard(Bitboard::from_square(Square::F8).0 | Bitboard::from_square(Square::G8).0);
+            const CASTLE_BQ_EMPTY: Bitboard = Bitboard(Bitboard::from_square(Square::B8).0 | Bitboard::from_square(Square::C8).0 | Bitboard::from_square(Square::D8).0);
+
+            const CASTLE_WK_UNATTACKED: Bitboard = Bitboard(Bitboard::from_square(Square::E1).0 | Bitboard::from_square(Square::F1).0 | Bitboard::from_square(Square::G1).0);
+            const CASTLE_WQ_UNATTACKED: Bitboard = Bitboard(Bitboard::from_square(Square::C1).0 | Bitboard::from_square(Square::D1).0 | Bitboard::from_square(Square::E1).0);
+            const CASTLE_BK_UNATTACKED: Bitboard = Bitboard(Bitboard::from_square(Square::E8).0 | Bitboard::from_square(Square::F8).0 | Bitboard::from_square(Square::G8).0);
+            const CASTLE_BQ_UNATTACKED: Bitboard = Bitboard(Bitboard::from_square(Square::C8).0 | Bitboard::from_square(Square::D8).0 | Bitboard::from_square(Square::E8).0);
+
+            let attacks = gen_attacks(board, !board.side_to_move, blockers);
+
+            match board.side_to_move {
+                Color::White => {
+                    if board.castles.is_set(Castle::WK)
+                    && blockers & CASTLE_WK_EMPTY == Bitboard::EMPTY
+                    && attacks & CASTLE_WK_UNATTACKED == Bitboard::EMPTY {
+                        v.push(CASTLE_WK_MOVE);
+                    }
+                    if board.castles.is_set(Castle::WQ)
+                    && blockers & CASTLE_WQ_EMPTY == Bitboard::EMPTY
+                    && attacks & CASTLE_WQ_UNATTACKED == Bitboard::EMPTY {
+                        v.push(CASTLE_WQ_MOVE);
+                    }
+                },
+                Color::Black => {
+                    if board.castles.is_set(Castle::BK)
+                    && blockers & CASTLE_BK_EMPTY == Bitboard::EMPTY
+                    && attacks & CASTLE_BK_UNATTACKED == Bitboard::EMPTY {
+                        v.push(CASTLE_BK_MOVE);
+                    }
+                    if board.castles.is_set(Castle::BQ)
+                    && blockers & CASTLE_BQ_EMPTY == Bitboard::EMPTY
+                    && attacks & CASTLE_BQ_UNATTACKED == Bitboard::EMPTY {
+                        v.push(CASTLE_BQ_MOVE);
+                    }
+                }
+            }
+        },
+        Piece::Pawn => {
+            let mut pawn_moves = Vec::new();
+            // Forward 1
+            let fwd = square.forward(board.side_to_move).unwrap();
+            if blockers & Bitboard::from_square(fwd) == Bitboard::EMPTY {
+                pawn_moves.push(Move { from: square, to: fwd, move_type: MoveType::Basic });
+
+                // Forward 2
+                if square.rank() == match board.side_to_move {
+                    Color::White => Rank::Two,
+                    Color::Black => Rank::Seven
+                } {
+                    let fwd_2 = square.forward(board.side_to_move).unwrap()
+                                            .forward(board.side_to_move).unwrap();
+                    if blockers & Bitboard::from_square(fwd_2) == Bitboard::EMPTY {
+                        pawn_moves.push(Move { from: square, to: fwd_2, move_type: MoveType::FirstPawnMove });
+                    }
+                }
+            }
+
+            // Capture left
+            if let Some(capture) = PAWN_LEFT_CAPTURES[board.side_to_move.idx()][square.idx()] {
+                if board.colors[(!board.side_to_move).idx()] & Bitboard::from_square(capture) != Bitboard::EMPTY {
+                    pawn_moves.push(Move { from: square, to: capture, move_type: MoveType::Basic });
+                }
+                else if board.en_passant == Some(capture) {
+                    pawn_moves.push(Move { from: square, to: capture, move_type: MoveType::EnPassant });
+                }
+            }
+            // Capture right
+            if let Some(capture) = PAWN_RIGHT_CAPTURES[board.side_to_move.idx()][square.idx()] {
+                if board.colors[(!board.side_to_move).idx()] & Bitboard::from_square(capture) != Bitboard::EMPTY {
+                    pawn_moves.push(Move { from: square, to: capture, move_type: MoveType::Basic });
+                }
+                else if board.en_passant == Some(capture) {
+                    pawn_moves.push(Move { from: square, to: capture, move_type: MoveType::EnPassant });
+                }
+            }
+
+            // If on promotion rank, convert moves into promotions
+            if square.rank() == match board.side_to_move {
+                Color::White => Rank::Seven,
+                Color::Black => Rank::Two
+            } {
+                v.extend(pawn_moves.into_iter().flat_map(|mv| Move::promotions(mv.from, mv.to)));
+            } else {
+                v.extend(pawn_moves);
+            }
+        }
+    }
+}
+
+fn gen_attacks(board: &Board, color: Color, blockers: Bitboard) -> Bitboard {
+    let mut attacks = Bitboard::EMPTY;
+    for piece in PIECES {
+        for square in board.pieces[piece.idx()] & board.colors[color.idx()] {
+            attacks |= gen_piece_attacks(piece, color, square, blockers);
+        }
+    }
+    attacks
+}
+
+fn gen_piece_attacks(piece: Piece, color: Color, square: Square, blockers: Bitboard) -> Bitboard {
+    match piece {
+        Piece::Rook => magic_tables::get_rook_moves(square, blockers),
+        Piece::Knight => KNIGHT_MOVES[square.idx()],
+        Piece::Bishop => magic_tables::get_bishop_moves(square, blockers),
+        Piece::Queen => magic_tables::get_queen_moves(square, blockers),
+        Piece::King => KING_MOVES[square.idx()],
+        Piece::Pawn => {
+            (match square.forward(color).unwrap().left() {
+                Some(square) => Bitboard::from_square(square),
+                None => Bitboard::EMPTY
+            }) | match square.forward(color).unwrap().right() {
+                Some(square) => Bitboard::from_square(square),
+                None => Bitboard::EMPTY
+            }
+        }
+    }
+}
+
+const KNIGHT_MOVES: [Bitboard; NUM_SQUARES] = {
+    let mut knight_moves = [Bitboard::EMPTY; NUM_SQUARES];
+    let mut square_idx = 0;
+    while square_idx < NUM_SQUARES {
+        let square = Square::from_idx(square_idx);
+        let mut moves = Bitboard::EMPTY;
+
+        if let Some(step) = square.up() { if let Some(step) = step.up() { if let Some(sq) = step.left() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+        if let Some(step) = square.up() { if let Some(step) = step.up() { if let Some(sq) = step.right() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+        if let Some(step) = square.down() { if let Some(step) = step.down() { if let Some(sq) = step.left() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+        if let Some(step) = square.down() { if let Some(step) = step.down() { if let Some(sq) = step.right() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+        if let Some(step) = square.left() { if let Some(step) = step.left() { if let Some(sq) = step.up() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+        if let Some(step) = square.left() { if let Some(step) = step.left() { if let Some(sq) = step.down() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+        if let Some(step) = square.right() { if let Some(step) = step.right() { if let Some(sq) = step.up() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+        if let Some(step) = square.right() { if let Some(step) = step.right() { if let Some(sq) = step.down() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}}
+
+        knight_moves[square_idx] = moves;
+        square_idx += 1;
+    }
+
+    knight_moves
+};
+
+const KING_MOVES: [Bitboard; NUM_SQUARES] = {
+    let mut king_moves = [Bitboard::EMPTY; NUM_SQUARES];
+    let mut square_idx = 0;
+    while square_idx < NUM_SQUARES {
+        let square = Square::from_idx(square_idx);
+        let mut moves = Bitboard::EMPTY;
+
+        if let Some(step) = square.up() { if let Some(sq) = step.left() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}
+        if let Some(sq) = square.up() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }
+        if let Some(step) = square.up() { if let Some(sq) = step.right() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}
+        if let Some(sq) = square.right() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }
+        if let Some(step) = square.down() { if let Some(sq) = step.right() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}
+        if let Some(sq) = square.down() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }
+        if let Some(step) = square.down() { if let Some(sq) = step.left() {
+            moves.0 |= Bitboard::from_square(sq).0;
+        }}
+        if let Some(sq) = square.left() {
+            moves.0 |= Bitboard::from_square(sq).0;
         }
 
-        // Castling
-        if mv.move_type == MoveType::Castle {
-            let f_x = (to_x * 7 - 14) / 4;
-            let t_x = (from_x + to_x) / 2;
+        king_moves[square_idx] = moves;
+        square_idx += 1;
+    }
 
-            let extra_piece = self.board[from_y][f_x].unwrap();
-            self.board[to_y][t_x] = Some(extra_piece);
-            self.board[from_y][f_x] = None;
-        }
+    king_moves
+};
 
-        // Update castling availability -- a bit inefficient but like whatevs?
-        match (from_y, from_x) {
-            (7, 4) => {
-                self.allowed_castling.w_k = false;
-                self.allowed_castling.w_q = false;
-            },
-            (0, 4) => {
-                self.allowed_castling.b_k = false;
-                self.allowed_castling.b_q = false;
-            },
-            (7, 7) => { self.allowed_castling.w_k = false; },
-            (7, 0) => { self.allowed_castling.w_q = false; },
-            (0, 7) => { self.allowed_castling.b_k = false; },
-            (0, 0) => { self.allowed_castling.b_q = false; },
+const PAWN_LEFT_CAPTURES: [[Option<Square>; NUM_SQUARES]; NUM_COLORS] = {
+    let mut captures = [[None; NUM_SQUARES]; NUM_COLORS];
+    let mut square_idx = 0;
+    while square_idx < NUM_SQUARES {
+        let square = Square::from_idx(square_idx);
+        match square.rank() {
+            Rank::One | Rank::Eight => { square_idx += 1; continue },
             _ => ()
         };
 
-        // Update en passant square
-        if piece.piece_type == PieceType::Pawn && to_y.abs_diff(from_y) == 2 {
-            self.en_passant = Some(Coord::new(match piece.color {
-                Color::White => to_y + 1,
-                Color::Black => to_y - 1,
-            }, to_x));
-        } else {
-            self.en_passant = None;
-        }
-
-        // Update fullmove num after black moves
-        if self.side_to_move.is_black() {self.fullmove_num += 1;}
-        // Update turn
-        self.side_to_move = !self.side_to_move;
-
-        // Update halfmove count
-        if piece.piece_type == PieceType::Pawn || is_capture {
-            self.halfmove_count = 0;
-        } else {
-            self.halfmove_count += 1;
-        }
-
-        // Update board state (EXCEPT if stalemate, which is weird but seems fast)
-        self.update_state_post_move();
-
-        // Log new position in history
-        self.history.push(ZOBRIST_HASHER.get().unwrap().hash(self));
+        captures[Color::White.idx()][square_idx] = square.up().unwrap().left();
+        captures[Color::Black.idx()][square_idx] = square.down().unwrap().left();
+        square_idx += 1;
     }
+    captures
+};
 
-    pub fn undo_move(&mut self) {
-        let Some(undo_data) = self.undo_stack.pop() else {return};
-
-        let Move { from: Coord { y: from_y, x: from_x }, to: Coord { y: to_y, x: to_x }, move_type } = undo_data.mv;
-
-        let piece = self.board[to_y][to_x].unwrap();
-
-        // Delete current position from history
-        self.history.pop();
-
-        // Swap
-        self.board[from_y][from_x] = if let MoveType::Promotion(_) = move_type {
-            Some(Piece {
-                piece_type: PieceType::Pawn,
-                color: piece.color
-            })
-        } else {
-            Some(piece)
-        };
-        self.board[to_y][to_x] = undo_data.captured;
-
-        if move_type == MoveType::EnPassant {
-            self.board[from_y][to_x] = Some(Piece {
-                piece_type: PieceType::Pawn,
-                color: self.side_to_move
-            });
-        }
-
-        if move_type == MoveType::Castle {
-            let (f_x, t_x) = if to_x == 6 {(7, 5)} else {(0, 3)};
-            let extra_piece = self.board[to_y][t_x].unwrap();
-            self.board[from_y][f_x] = Some(extra_piece);
-            self.board[to_y][t_x] = None;
-        }
-
-        // Update values from saved data
-        self.allowed_castling = undo_data.allowed_castling;
-        self.en_passant = undo_data.en_passant;
-        self.halfmove_count = undo_data.halfmove_count;
-        
-        // Undo fullmove count
-        if self.side_to_move.is_white() {
-            self.fullmove_num -= 1;
-        }
-        // Update turn
-        self.side_to_move = !self.side_to_move;
-
-        // Reset board state
-        self.state = BoardState::Live;
-    }
-
-    pub fn get_legal_moves(&mut self) -> Vec<Move> {
-        if !self.is_live() { return Vec::new(); }
-
-        let mut moves = Vec::with_capacity(80);
-        let piece_coords: Vec<Coord> = self.find_players_pieces(self.side_to_move).collect();
-        for coord in piece_coords {
-            self.get_piece_moves(coord, &mut moves);
-        }
-        if moves.is_empty() {
-            self.update_state_no_moves();
-        }
-        moves
-    }
-
-    pub fn find_players_pieces<'a>(&'a self, color: Color) -> impl Iterator<Item = Coord> + 'a {
-        COORDS.into_iter().filter(move |&c| self.square_is_color(c, color))
-    }
-
-    fn get_piece_moves(&mut self, coord: Coord, moves: &mut Vec<Move>) {
-        let piece = self.get_square(coord).unwrap();
-        match piece.piece_type {
-            PieceType::Rook => self.get_rook_moves(coord, moves),
-            PieceType::Knight => self.get_knight_moves(coord, moves),
-            PieceType::Bishop => self.get_bishop_moves(coord, moves),
-            PieceType::Queen => self.get_queen_moves(coord, moves),
-            PieceType::King => self.get_king_moves(coord, moves),
-            PieceType::Pawn => self.get_pawn_moves(coord, moves),
-        }
-    }
-
-    fn get_linear_moves(&mut self, coord: Coord, step_list: &[(isize, isize)], one_step_only: bool, moves: &mut Vec<Move>) {
-        let color = self.get_square(coord).unwrap().color;
-        for &step in step_list {
-            let mut test_coord = coord;
-            while test_coord.add(step) {
-                if self.square_is_color(test_coord, color) { break; }
-                
-                let mv = Move::new(coord, test_coord, MoveType::Basic);
-                if self.move_is_legal(&mv) { moves.push(mv); }
-
-                if self.square_is_color(test_coord, !color) { break; }
-
-                if one_step_only { break; }
-            }
-        }
-    }
-
-    fn get_rook_moves(&mut self, coord: Coord, moves: &mut Vec<Move>) {
-        self.get_linear_moves(coord, &R_STEPS, false, moves)
-    }
-    fn get_knight_moves(&mut self, coord: Coord, moves: &mut Vec<Move>) {
-        self.get_linear_moves(coord, &N_STEPS, true, moves)
-    }
-    fn get_bishop_moves(&mut self, coord: Coord, moves: &mut Vec<Move>) {
-        self.get_linear_moves(coord, &B_STEPS, false, moves)
-    }
-    fn get_queen_moves(&mut self, coord: Coord, moves: &mut Vec<Move>) {
-        self.get_linear_moves(coord, &KQ_STEPS, false, moves)
-    }
-
-    fn get_king_moves(&mut self, coord: Coord, moves: &mut Vec<Move>) {
-        self.get_linear_moves(coord, &KQ_STEPS, true, moves);
-
-        // TODO: castling out of/through check
-        // TODO: make four separate consts, or just write it out in this fn
-        if coord.x == 4 && coord.y == 7 {
-            if self.allowed_castling.w_k && self.board[7][5].is_none() && self.board[7][6].is_none() {
-                if self.move_is_legal(&CASTLE_W_K) { moves.push(CASTLE_W_K); }
-            }
-            if self.allowed_castling.w_q && self.board[7][2].is_none() && self.board[7][3].is_none() && self.board[7][4].is_none() {
-                if self.move_is_legal(&CASTLE_W_Q) { moves.push(CASTLE_W_Q); }
-            }
-        }
-        if coord.x == 4 && coord.y == 0 {
-            if self.allowed_castling.b_k && self.board[0][5].is_none() && self.board[0][6].is_none() {
-                if self.move_is_legal(&CASTLE_B_K) { moves.push(CASTLE_B_K); }
-            }
-            if self.allowed_castling.b_q && self.board[0][2].is_none() && self.board[0][3].is_none() && self.board[0][4].is_none() {
-                if self.move_is_legal(&CASTLE_B_Q) { moves.push(CASTLE_B_Q); }
-            }
-        }
-    }
-
-    fn get_pawn_moves(&mut self, coord: Coord, moves: &mut Vec<Move>) {
-        let Coord { y, x } = coord;
-        let color = self.board[y][x].unwrap().color;
-
-        let pawn_dir = match color {
-            Color::White => -1,
-            Color::Black => 1
-        };
-        let will_promote = y == match color {
-            Color::White => 1,
-            Color::Black => 6
+const PAWN_RIGHT_CAPTURES: [[Option<Square>; NUM_SQUARES]; NUM_COLORS] = {
+    let mut captures = [[None; NUM_SQUARES]; NUM_COLORS];
+    let mut square_idx = 0;
+    while square_idx < NUM_SQUARES {
+        let square = Square::from_idx(square_idx);
+        match square.rank() {
+            Rank::One | Rank::Eight => { square_idx += 1; continue },
+            _ => ()
         };
 
-        if self.board[(y as isize + pawn_dir) as usize][x].is_none() {
-            // Forward 1
-            if will_promote {
-                let promos = Move::promotions(coord, Coord::new((y as isize + pawn_dir) as usize, x));
-                if self.move_is_legal(&promos[0]) { moves.extend(promos); }
-            } else {
-                let mv = Move::new(coord, Coord::new((y as isize + pawn_dir) as usize, x), MoveType::Basic);
-                if self.move_is_legal(&mv) { moves.push(mv); }
-            }
-            // Forward 2
-            if (color.is_white() && y == 6 || color.is_black() && y == 1) && self.board[(y as isize + 2*pawn_dir) as usize][x].is_none() {
-                let mv = Move::new(coord, Coord::new((y as isize + 2*pawn_dir) as usize, x), MoveType::Basic);
-                if self.move_is_legal(&mv) { moves.push(mv); }
-            }
-        }
-
-        if x != 0 {
-            // Capture left
-            if self.square_is_color(Coord::new((y as isize + pawn_dir) as usize, x - 1), !color) {
-                if will_promote {
-                    let promos = Move::promotions(coord, Coord::new((y as isize + pawn_dir) as usize, x - 1));
-                    if self.move_is_legal(&promos[0]) { moves.extend(promos); }
-                } else {
-                    let mv = Move::new(coord, Coord::new((y as isize + pawn_dir) as usize, x - 1), MoveType::Basic);
-                    if self.move_is_legal(&mv) { moves.push(mv); }
-                }
-            }
-            // En passant left
-            if let Some(sq) = self.en_passant {
-                if sq.y == (y as isize + pawn_dir) as usize && sq.x == x - 1 {
-                    let mv = Move::new(coord, Coord::new((y as isize + pawn_dir) as usize, x - 1), MoveType::EnPassant);
-                    if self.move_is_legal(&mv) { moves.push(mv); }
-                }
-            }
-        }
-        if x != 7 {
-            // Capture right
-            if self.square_is_color(Coord::new((y as isize + pawn_dir) as usize, x + 1), !color) {
-                if will_promote {
-                    let promos = Move::promotions(coord, Coord::new((y as isize + pawn_dir) as usize, x + 1));
-                    if self.move_is_legal(&promos[0]) { moves.extend(promos); }
-                } else {
-                    let mv = Move::new(coord, Coord::new((y as isize + pawn_dir) as usize, x + 1), MoveType::Basic);
-                    if self.move_is_legal(&mv) { moves.push(mv); }
-                }
-            }
-            // En passant right
-            if let Some(sq) = self.en_passant {
-                if sq.y == (y as isize + pawn_dir) as usize && sq.x == x + 1 {
-                    let mv = Move::new(coord, Coord::new((y as isize + pawn_dir) as usize, x + 1), MoveType::EnPassant);
-                    if self.move_is_legal(&mv) { moves.push(mv); }
-                }
-            }
-        }
+        captures[Color::White.idx()][square_idx] = square.up().unwrap().right();
+        captures[Color::Black.idx()][square_idx] = square.down().unwrap().right();
+        square_idx += 1;
     }
-
-    pub fn move_is_legal(&mut self, mv: &Move) -> bool {
-        self.make_move(mv, true);
-        let is_legal = !self.king_is_attacked(!self.side_to_move);
-        self.undo_move();
-        is_legal
-    }
-
-    fn king_is_attacked(&self, color: Color) -> bool {
-        let king = COORDS.into_iter().find(|&c|
-            self.square_is_color(c, color) && self.square_is_piece_type(c, PieceType::King)
-        ).unwrap();
-
-        self.square_is_attacked(king, !color)
-    }
-
-    fn square_is_attacked(&self, target: Coord, color: Color) -> bool {
-        self.find_players_pieces(color).any(|coord| self.piece_attacks(coord, target))
-    }
-
-    fn piece_attacks(&self, coord: Coord, target: Coord) -> bool {
-        let piece = self.get_square(coord).unwrap();
-        match piece.piece_type {
-            PieceType::Rook => {
-                if coord.x != target.x && coord.y != target.y { return false; }
-                self.can_linearly_attack(coord, target, &R_STEPS)
-            },
-            PieceType::Knight => {
-                let x_diff = coord.x.abs_diff(target.x);
-                let y_diff = coord.y.abs_diff(target.y);
-                (x_diff == 2 && y_diff == 1) || (x_diff == 1 && y_diff == 2)
-            },
-            PieceType::Bishop => {
-                if coord.x.abs_diff(target.x) != coord.y.abs_diff(target.y) { return false; }
-                self.can_linearly_attack(coord, target, &B_STEPS)
-            },
-            PieceType::Queen => {
-                if coord.x != target.x && coord.y != target.y
-                    && coord.x.abs_diff(target.x) != coord.y.abs_diff(target.y) { return false; }
-                self.can_linearly_attack(coord, target, &KQ_STEPS)
-            },
-            PieceType::King => {
-                coord.x.abs_diff(target.x) <= 1 && coord.y.abs_diff(target.y) <= 1
-            },
-            PieceType::Pawn => {
-                let dir = match self.get_square(coord).unwrap().color {
-                    Color::White => -1,
-                    Color::Black => 1
-                };
-                coord.x.abs_diff(target.x) == 1 && (coord.y as isize + dir) as usize == target.y
-            },
-        }
-    }
-
-    fn can_linearly_attack(&self, from: Coord, to: Coord, step_list: &[(isize, isize)]) -> bool {
-        for &step in step_list {
-            let mut test_coord = from;
-            while test_coord.add(step) {
-                if test_coord == to {
-                    return true;
-                }
-                if self.get_square(test_coord).is_some() {
-                    break;
-                }
-            }
-        }
-        return false;
-    }
-
-    fn update_state_no_moves(&mut self) {
-        self.state = if !self.is_check() {
-            BoardState::Stalemate
-        }
-        else { match self.side_to_move {
-            Color::White => BoardState::BlackWin,
-            Color::Black => BoardState::WhiteWin
-        }};
-    }
-
-    pub fn is_check(&self) -> bool {
-        self.king_is_attacked(self.side_to_move)
-    }
-
-    fn update_state_post_move(&mut self) {
-        if self.halfmove_count >= 100 {
-            self.state = BoardState::FiftyMoveRule;
-        }
-        else if self.check_threefold_repetition() {
-            self.state = BoardState::ThreefoldRepetition;
-        }
-        else if self.check_insufficient_material() {
-            self.state = BoardState::InsufficientMaterial;
-        }
-    }
-
-    fn check_threefold_repetition(&self) -> bool {
-        let Some(current) = self.history.last() else { return false; };
-
-        let mut count = 0;
-        for hash in self.history.iter().rev().step_by(2) {
-            if hash == current {
-                count += 1;
-            }
-            if count >= 3 {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    fn check_insufficient_material(&self) -> bool {
-        let mut w_knights = 0;
-        let mut w_bishops = 0;
-        let mut w_bishop_sq_color = 0;
-
-        for coord in self.find_players_pieces(Color::White) {
-            let piece_type = self.get_square(coord).unwrap().piece_type;
-            match piece_type {
-                PieceType::Rook => return false,
-                PieceType::Queen => return false,
-                PieceType::Pawn => return false,
-                PieceType::Knight => w_knights += 1,
-                PieceType::Bishop => {
-                    w_bishops += 1;
-                    w_bishop_sq_color = coord.idx() & 1;
-                },
-                PieceType::King => {}
-            };
-
-            if w_knights + w_bishops >= 2 {
-                return false;
-            }
-        }   
-
-        let mut b_knights = 0;
-        let mut b_bishops = 0;
-        let mut b_bishop_sq_color = 0;
-
-        for coord in self.find_players_pieces(Color::Black) {
-            let piece_type = self.get_square(coord).unwrap().piece_type;
-            match piece_type {
-                PieceType::Rook => return false,
-                PieceType::Queen => return false,
-                PieceType::Pawn => return false,
-                PieceType::Knight => b_knights += 1,
-                PieceType::Bishop => {
-                    b_bishops += 1;
-                    b_bishop_sq_color = coord.idx() & 1;
-                },
-                PieceType::King => {}
-            };
-
-            if b_knights + b_bishops >= 2 {
-                return false;
-            }
-
-            if b_knights >= 1 && w_knights + w_bishops >= 1 {
-                return false;
-            }
-
-            if b_bishops >= 1 && w_knights >= 1 {
-                return false;
-            }
-        }
-
-        if w_bishops == 1 && b_bishops == 1 && w_bishop_sq_color != b_bishop_sq_color {
-            return false;
-        }
-
-        return true;
-    }
-}
+    captures
+};

@@ -1,40 +1,5 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Color {
-    White,
-    Black
-}
-
-pub const NUM_COLORS: usize = 2;
-pub const COLORS: [Color; 2] = [Color::White, Color::Black];
-
-impl Color {
-    pub const fn is_white(&self) -> bool {
-        match self {
-            Color::White => true,
-            Color::Black => false
-        }
-    }
-
-    pub const fn is_black(&self) -> bool {
-        match self {
-            Color::White => false,
-            Color::Black => true
-        }
-    }
-}
-
-impl std::ops::Not for Color {
-    type Output = Color;
-    fn not(self) -> Self::Output {
-        match self {
-            Color::White => Color::Black,
-            Color::Black => Color::White
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PieceType {
+pub enum Piece {
     Rook,
     Knight,
     Bishop,
@@ -43,74 +8,65 @@ pub enum PieceType {
     Pawn
 }
 
-pub const NUM_PIECE_TYPES: usize = 6;
-
-impl PieceType {
-    pub const fn from_char(c: char) -> Option<Self> {
-        match c.to_ascii_uppercase() {
-            'R' => Some(PieceType::Rook),
-            'N' => Some(PieceType::Knight),
-            'B' => Some(PieceType::Bishop),
-            'Q' => Some(PieceType::Queen),
-            'K' => Some(PieceType::King),
-            'P' => Some(PieceType::Pawn),
-            _ => None
-        }
-    }
-
-    pub const fn from_ascii_char(c: u8) -> Option<Self> {
-        match c.to_ascii_uppercase() {
-            b'R' => Some(PieceType::Rook),
-            b'N' => Some(PieceType::Knight),
-            b'B' => Some(PieceType::Bishop),
-            b'Q' => Some(PieceType::Queen),
-            b'K' => Some(PieceType::King),
-            b'P' => Some(PieceType::Pawn),
-            _ => None
-        }
-    }
-
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            PieceType::Rook => "R",
-            PieceType::Knight => "N",
-            PieceType::Bishop => "B",
-            PieceType::Queen => "Q",
-            PieceType::King => "K",
-            PieceType::Pawn => "P",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Piece {
-    pub piece_type: PieceType,
-    pub color: Color
-}
-
-pub const NUM_PIECES: usize = NUM_COLORS * NUM_PIECE_TYPES;
+pub const NUM_PIECES: usize = 6;
+pub const PIECES: [Piece; NUM_PIECES] = [
+    Piece::Rook, Piece::Knight, Piece::Bishop, Piece::Queen, Piece::King, Piece::Pawn
+];
 
 impl Piece {
-    pub fn new(c: char) -> Option<Self> {
-        Some(Piece {
-                piece_type: PieceType::from_char(c)?,
-                color: if c.is_ascii_uppercase() { Color::White } else { Color::Black }
-            })
+    #[inline]
+    pub const fn from_idx(idx: usize) -> Self {
+        match idx {
+            0 => Piece::Rook,
+            1 => Piece::Knight,
+            2 => Piece::Bishop,
+            3 => Piece::Queen,
+            4 => Piece::King,
+            5 => Piece::Pawn,
+            _ => panic!("invalid idx")
+        }
     }
 
-    pub fn new_ascii(c: u8) -> Option<Self> {
-        Some(Piece {
-            piece_type: PieceType::from_ascii_char(c)?,
-            color: if c.is_ascii_uppercase() { Color::White } else { Color::Black }
-        })
+    #[inline]
+    pub const fn idx(self) -> usize {
+        self as usize
+    }
+
+    // pub const fn from_char(c: char) -> Option<Self> {
+    //     match c.to_ascii_uppercase() {
+    //         'R' => Some(Piece::Rook),
+    //         'N' => Some(Piece::Knight),
+    //         'B' => Some(Piece::Bishop),
+    //         'Q' => Some(Piece::Queen),
+    //         'K' => Some(Piece::King),
+    //         'P' => Some(Piece::Pawn),
+    //         _ => None
+    //     }
+    // }
+
+    #[inline]
+    pub const fn from_ascii(b: u8) -> Option<Self> {
+        match b.to_ascii_uppercase() {
+            b'R' => Some(Piece::Rook),
+            b'N' => Some(Piece::Knight),
+            b'B' => Some(Piece::Bishop),
+            b'Q' => Some(Piece::Queen),
+            b'K' => Some(Piece::King),
+            b'P' => Some(Piece::Pawn),
+            _ => None
+        }
     }
 }
 
 impl std::fmt::Display for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self.color {
-            Color::White => self.piece_type.as_str().to_owned(),
-            Color::Black => self.piece_type.as_str().to_ascii_lowercase()
+        write!(f, "{}", match self {
+            Piece::Rook => "r",
+            Piece::Knight => "n",
+            Piece::Bishop => "b",
+            Piece::Queen => "q",
+            Piece::King => "k",
+            Piece::Pawn => "p",
         })
     }
 }

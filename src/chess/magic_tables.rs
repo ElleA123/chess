@@ -1,22 +1,25 @@
-use std::sync::{LazyLock, OnceLock};
+use super::{bitboard::Bitboard, square::{Square, NUM_SQUARES}};
+
+use std::sync::OnceLock;
 
 use rand::{RngCore, SeedableRng, rngs::SmallRng};
-
-use crate::bchess::{bitboard::Bitboard, square::{Square, NUM_SQUARES}};
 use crate::prng::PRNG;
 
 // https://analog-hors.github.io/site/magic-bitboards/
 
+#[inline]
 pub fn get_rook_moves(square: Square, blockers: Bitboard) -> Bitboard {
     let entry = &ROOK_MAGICS.get().unwrap()[square.idx()];
     entry.1[magic_table_idx(&entry.0, blockers)]
 }
 
+#[inline]
 pub fn get_bishop_moves(square: Square, blockers: Bitboard) -> Bitboard {
     let entry = &BISHOP_MAGICS.get().unwrap()[square.idx()];
     entry.1[magic_table_idx(&entry.0, blockers)]
 }
 
+#[inline]
 pub fn get_queen_moves(square: Square, blockers: Bitboard) -> Bitboard {
     get_rook_moves(square, blockers) | get_bishop_moves(square, blockers)
 }
@@ -24,7 +27,7 @@ pub fn get_queen_moves(square: Square, blockers: Bitboard) -> Bitboard {
 static ROOK_MAGICS: OnceLock<[(Magic, Vec<Bitboard>); NUM_SQUARES]> = OnceLock::new();
 static BISHOP_MAGICS: OnceLock<[(Magic, Vec<Bitboard>); NUM_SQUARES]> = OnceLock::new();
 
-pub fn init_tables() {
+pub fn init_magic_tables() {
     ROOK_MAGICS.set({
         let mut magics = core::array::from_fn(|_|
             (Magic {
@@ -35,11 +38,12 @@ pub fn init_tables() {
             Vec::with_capacity(1 << ROOK_IDX_BITS))
         );
 
+        // TODO: improve my PRNG so this isn't needed
         let mut rng = SmallRng::seed_from_u64(123123);
 
         let mut square_idx = 0;
         while square_idx < NUM_SQUARES {
-            let square = Square::from_idx(square_idx as u8);
+            let square = Square::from_idx(square_idx);
             let mask = ROOK_MASKS[square_idx];
 
             'search: loop {
@@ -87,7 +91,7 @@ pub fn init_tables() {
 
         let mut square_idx = 0;
         while square_idx < NUM_SQUARES {
-            let square = Square::from_idx(square_idx as u8);
+            let square = Square::from_idx(square_idx);
             let mask = BISHOP_MASKS[square_idx];
 
             let mut prng = PRNG::new(123123);
@@ -148,7 +152,7 @@ const ROOK_MASKS: [Bitboard; NUM_SQUARES] = {
 
     let mut square_idx = 0;
     while square_idx < NUM_SQUARES {
-        let square = Square::from_idx(square_idx as u8);
+        let square = Square::from_idx(square_idx);
         let mut mask = Bitboard::EMPTY;
 
         if let Some(mut sq) = square.up() {
@@ -217,7 +221,7 @@ const BISHOP_MASKS: [Bitboard; NUM_SQUARES] = {
 
     let mut square_idx = 0;
     while square_idx < NUM_SQUARES {
-        let square = Square::from_idx(square_idx as u8);
+        let square = Square::from_idx(square_idx);
         let mut mask = Bitboard::EMPTY;
 
         if let Some(step) = square.up() {

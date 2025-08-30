@@ -1,4 +1,4 @@
-use crate::bchess::color::Color;
+use super::color::Color;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -10,6 +10,7 @@ pub const FILES: [File; NUM_FILES] = [
 ];
 
 impl File {
+    #[inline]
     pub const fn from_u8(n: u8) -> Self {
         assert!(n < 8);
         match n {
@@ -25,11 +26,18 @@ impl File {
         }
     }
 
+    #[inline]
     pub const fn from_ascii(b: u8) -> Self {
         assert!(b >= b'a' && b <= b'h');
         Self::from_u8(b - b'a')
     }
 
+    #[inline]
+    pub const fn idx(self) -> usize {
+        self as usize
+    }
+
+    #[inline]
     pub const fn left(self) -> Option<Self> {
         match self {
             File::A => None,
@@ -43,6 +51,7 @@ impl File {
         }
     }
 
+    #[inline]
     pub const fn right(self) -> Option<Self> {
         match self {
             File::A => Some(File::B),
@@ -67,6 +76,7 @@ pub const RANKS: [Rank; NUM_RANKS] = [
 ];
 
 impl Rank {
+    #[inline]
     pub const fn from_u8(n: u8) -> Self {
         assert!(n < 8);
         match n {
@@ -82,11 +92,13 @@ impl Rank {
         }
     }
 
+    #[inline]
     pub const fn from_ascii(b: u8) -> Self {
         assert!(b >= b'1' && b <= b'8');
         Self::from_u8(b - b'1')
     }
 
+    #[inline]
     pub const fn up(self) -> Option<Self> {
         match self {
             Rank::One => Some(Rank::Two),
@@ -100,6 +112,7 @@ impl Rank {
         }
     }
 
+    #[inline]
     pub const fn down(self) -> Option<Self> {
         match self {
             Rank::One => None,
@@ -113,6 +126,7 @@ impl Rank {
         }
     }
 
+    #[inline]
     pub const fn forward(&self, color: Color) -> Option<Self> {
         match color {
             Color::White => self.up(),
@@ -120,6 +134,7 @@ impl Rank {
         }
     }
 
+    #[inline]
     pub const fn backward(&self, color: Color) -> Option<Self> {
         match color {
             Color::White => self.down(),
@@ -135,13 +150,13 @@ pub struct Square(u8);
 pub const NUM_SQUARES: usize = 64;
 
 impl Square {
-    pub const fn from_idx(square: u8) -> Self {
-        assert!(square < 64);
-        Self(square)
+    #[inline]
+    pub const fn from_idx(square: usize) -> Self {
+        Self(square as u8)
     }
 
+    #[inline]
     pub const fn from_coords(file: File, rank: Rank) -> Self {
-        assert!((file as u8) < 8 && (rank as u8) < 8);
         Self(8 * rank as u8 + file as u8)
     }
 
@@ -156,18 +171,22 @@ impl Square {
         Some(Self::from_coords(File::from_ascii(bytes[0]), Rank::from_ascii(bytes[1])))
     }
 
+    #[inline]
     pub const fn rank(&self) -> Rank {
         Rank::from_u8(self.0 >> 3)
     }
 
+    #[inline]
     pub const fn file(&self) -> File {
         File::from_u8(self.0 & 7)
     }
 
+    #[inline]
     pub const fn idx(&self) -> usize {
         self.0 as usize
     }
 
+    #[inline]
     pub const fn up(&self) -> Option<Self> {
         match self.rank().up() {
             Some(rank) => Some(Self::from_coords(self.file(), rank)),
@@ -175,6 +194,7 @@ impl Square {
         }
     }
 
+    #[inline]
     pub const fn down(&self) -> Option<Self> {
         match self.rank().down() {
             Some(rank) => Some(Self::from_coords(self.file(), rank)),
@@ -182,6 +202,7 @@ impl Square {
         }
     }
 
+    #[inline]
     pub const fn left(&self) -> Option<Self> {
         match self.file().left() {
             Some(file) => Some(Self::from_coords(file, self.rank())),
@@ -189,6 +210,7 @@ impl Square {
         }
     }
 
+    #[inline]
     pub const fn right(&self) -> Option<Self> {
         match self.file().right() {
             Some(file) => Some(Self::from_coords(file, self.rank())),
@@ -196,6 +218,7 @@ impl Square {
         }
     }
 
+    #[inline]
     pub const fn forward(&self, color: Color) -> Option<Self> {
         match self.rank().forward(color) {
             Some(rank) => Some(Self::from_coords(self.file(), rank)),
@@ -203,6 +226,7 @@ impl Square {
         }
     }
 
+    #[inline]
     pub const fn backward(&self, color: Color) -> Option<Self> {
         match self.rank().backward(color) {
             Some(rank) => Some(Self::from_coords(self.file(), rank)),

@@ -1,11 +1,14 @@
-pub mod piece;
-pub mod coord;
-pub mod mv;
-pub mod board;
+mod bitboard;
+mod board;
+mod color;
+mod magic_tables;
+mod mv;
+mod piece;
+mod square;
 
-pub use self::{
-    piece::{Color, PieceType, Piece, NUM_PIECE_TYPES},
-    coord::{Coord, NUM_COORDS},
-    mv::Move,
-    board::{Board, BoardState, START_POS_FEN}
-};
+pub use board::{Board, START_POS_FEN, make_move, gen_legal_moves};
+pub use color::*;
+pub use magic_tables::init_magic_tables;
+pub use mv::*;
+pub use piece::*;
+pub use square::*;

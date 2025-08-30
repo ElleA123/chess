@@ -8,6 +8,7 @@ pub const NUM_COLORS: usize = 2;
 pub const COLORS: [Color; 2] = [Color::White, Color::Black];
 
 impl Color {
+    #[inline]
     pub const fn is_white(&self) -> bool {
         match self {
             Color::White => true,
@@ -15,6 +16,7 @@ impl Color {
         }
     }
 
+    #[inline]
     pub const fn is_black(&self) -> bool {
         match self {
             Color::White => false,
@@ -22,8 +24,17 @@ impl Color {
         }
     }
 
+    #[inline]
     pub const fn idx(self) -> usize {
         self as usize
+    }
+
+    #[inline(always)]
+    pub const fn map<T: Copy>(&self, white: T, black: T) -> T {
+        match self {
+            Color::White => white,
+            Color::Black => black
+        }
     }
 }
 

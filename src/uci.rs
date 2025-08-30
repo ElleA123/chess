@@ -1,5 +1,6 @@
+use crate::{chess::{self, Board, Move, Piece, Square, START_POS_FEN}, engine};
+
 use std::{sync::mpsc, thread};
-use crate::{chess::{Board, Coord, Move, PieceType, START_POS_FEN}, engine};
 
 #[derive(Debug, PartialEq)]
 enum UciCommand {
@@ -47,11 +48,11 @@ pub struct UciGoOptions {
     pub perft: Option<usize>,
 }
 
-enum UciResponse {
+pub enum UciResponse {
     Uci,
     IsReady,
     BestMove(String),
-    Info,
+    Plaintext(String),
 }
 
 pub fn run_uci_mode() {
@@ -94,7 +95,9 @@ pub fn run_uci_mode() {
                 UciResponse::BestMove(mv) => {
                     println!("bestmove {}", mv);
                 },
-                _ => todo!()
+                UciResponse::Plaintext(text) => {
+                    println!("{}", text);
+                }
             }
         }
     });
@@ -110,11 +113,15 @@ pub fn run_uci_mode() {
                 todo!()
             },
             UciCommand::Position { fen, moves } => {
-                board.set_position(&fen);
+                board = match Board::new(&fen) {
+                    Some(new) => new,
+                    None => return
+                };
+
                 for mv in moves {
-                    board.make_move(&Move::from_uci(&mv, &board).unwrap(), false);
+                    board = chess::make_move(&board, Move::from_uci(&mv, &board).unwrap());
                 }
-                println!("debug: set position to {}", board.get_fen());
+                // println!("debug: set position to {}", board.get_fen());
             },
             UciCommand::UciNewGame => {
 
@@ -138,6 +145,13 @@ pub fn run_uci_mode() {
                     let Ok(Some(best_move)) = engine::search_infinite(&mut board, search_moves, &halt_receiver) else { return; };
                     stdout_sender.send(UciResponse::BestMove(best_move.uci())).expect("stdout error");
                 }
+
+                else if let Some(depth) = options.perft {
+                    println!("debug: running perft test with depth {}", depth);
+                    let count = engine::search_perft(&board, depth, Some(&stdout_sender));
+                    stdout_sender.send(UciResponse::Plaintext(count.to_string())).expect("stdout error");
+                }
+
                 else {
                     let search_options = engine::decide_options(&mut board, &options);
                     println!("debug: decided search options {:?}", search_options);
@@ -172,31 +186,46 @@ fn parse_uci_command(command: &str) -> Option<UciCommand> {
 
             let mut moves = Vec::new();
             if let Some(next) = words.next() {
-                if next != "moves" { return None; }
+                if next != "moves" {
+                    return Some(UciCommand::Position { fen, moves: Vec::new() });
+                }
                 moves = words.map(|str| str.to_owned()).collect();
             }
 
-            Some(UciCommand::Position {
-                fen,
-                moves
-            })
+            Some(UciCommand::Position { fen, moves })
         },
         "ucinewgame" => Some(UciCommand::UciNewGame),
         "isready" => Some(UciCommand::IsReady),
         "go" => {
-            let mut search_moves = None;
-            let mut ponder = false;
-            let mut wtime = None;
-            let mut btime = None;
-            let mut winc = None;
-            let mut binc = None;
-            let mut moves_to_go = None;
-            let mut depth = None;
-            let mut nodes = None;
-            let mut mate = None;
-            let mut move_time = None;
-            let mut infinite = false;
-            let mut perft = None;
+            let mut options = UciGoOptions {
+                search_moves: None,
+                ponder: false,
+                wtime: None,
+                btime: None,
+                winc: None,
+                binc: None,
+                moves_to_go: None,
+                depth: None,
+                nodes: None,
+                mate: None,
+                move_time: None,
+                infinite: false,
+                perft: None
+            };
+
+            // let mut search_moves = None;
+            // let mut ponder = false;
+            // let mut wtime = None;
+            // let mut btime = None;
+            // let mut winc = None;
+            // let mut binc = None;
+            // let mut moves_to_go = None;
+            // let mut depth = None;
+            // let mut nodes = None;
+            // let mut mate = None;
+            // let mut move_time = None;
+            // let mut infinite = false;
+            // let mut perft = None;
 
             let mut optionless = true;
 
@@ -204,49 +233,33 @@ fn parse_uci_command(command: &str) -> Option<UciCommand> {
                 optionless = false;
                 match param {
                     "searchmoves" => {
-                        search_moves = Some(Vec::new());
+                        options.search_moves = Some(Vec::new());
                         for mv in (&mut words).take_while(|&word| is_uci_move(word)) {
-                            search_moves.as_mut().unwrap().push(mv.to_owned());
+                            options.search_moves.as_mut().unwrap().push(mv.to_owned());
                         }
                     },
-                    "ponder" => ponder = true,
-                    "wtime" => parse_next_as_usize(&mut wtime, &mut words)?,
-                    "btime" => parse_next_as_usize(&mut btime, &mut words)?,
-                    "winc" => parse_next_as_usize(&mut winc, &mut words)?,
-                    "binc" => parse_next_as_usize(&mut binc, &mut words)?,
-                    "movestogo" => parse_next_as_usize(&mut moves_to_go, &mut words)?,
-                    "depth" => parse_next_as_usize(&mut depth, &mut words)?,
-                    "nodes" => parse_next_as_usize(&mut nodes, &mut words)?,
-                    "mate" => parse_next_as_usize(&mut mate, &mut words)?,
-                    "movetime" => parse_next_as_usize(&mut move_time, &mut words)?,
-                    "infinite" => infinite = true,
-                    "perft" => parse_next_as_usize(&mut perft, &mut words)?,
-                    _ => return None
+                    "ponder" => options.ponder = true,
+                    "wtime" => if !parse_next_as_usize(&mut options.wtime, &mut words) { return Some(UciCommand::Go { options }) },
+                    "btime" => if !parse_next_as_usize(&mut options.btime, &mut words) { return Some(UciCommand::Go { options }) },
+                    "winc" => if !parse_next_as_usize(&mut options.winc, &mut words) { return Some(UciCommand::Go { options }) },
+                    "binc" => if !parse_next_as_usize(&mut options.binc, &mut words) { return Some(UciCommand::Go { options }) },
+                    "movestogo" => if !parse_next_as_usize(&mut options.moves_to_go, &mut words) { return Some(UciCommand::Go { options }) },
+                    "depth" => if !parse_next_as_usize(&mut options.depth, &mut words) { return Some(UciCommand::Go { options }) },
+                    "nodes" => if !parse_next_as_usize(&mut options.nodes, &mut words) { return Some(UciCommand::Go { options }) },
+                    "mate" => if !parse_next_as_usize(&mut options.mate, &mut words) { return Some(UciCommand::Go { options }) },
+                    "movetime" => if !parse_next_as_usize(&mut options.move_time, &mut words) { return Some(UciCommand::Go { options }) },
+                    "infinite" => options.infinite = true,
+                    "perft" => if !parse_next_as_usize(&mut options.perft, &mut words) { return Some(UciCommand::Go { options }) },
+                    _ => return Some(UciCommand::Go { options })
                 }
             }
 
             // If command is "go", execute "go depth 245"
             if optionless {
-                depth = Some(245);
+                options.depth = Some(245);
             }
             
-            Some(UciCommand::Go {
-                options: UciGoOptions {
-                    search_moves,
-                    ponder,
-                    wtime,
-                    btime,
-                    winc,
-                    binc,
-                    moves_to_go,
-                    depth,
-                    nodes,
-                    mate,
-                    move_time,
-                    infinite,
-                    perft
-                }
-            })
+            Some(UciCommand::Go { options })
         },
         "stop" => Some(UciCommand::Stop),
         "quit" => Some(UciCommand::Quit),
@@ -258,14 +271,15 @@ fn is_uci_move(word: &str) -> bool {
     word.is_ascii()
     && (
         word.len() == 4
-        || word.len() == 5 && PieceType::from_ascii_char(word.as_bytes()[4]).is_some()
+        || word.len() == 5 && Piece::from_ascii(word.as_bytes()[4]).is_some()
     )
-    && Coord::from_san(&word[0..2]).is_some() && Coord::from_san(&word[2..4]).is_some()
+    && Square::from_san(&word[0..2]).is_some() && Square::from_san(&word[2..4]).is_some()
 }
 
-fn parse_next_as_usize<'a>(var: &mut Option<usize>, words: &mut impl Iterator<Item = &'a str>) -> Option<()> {
-    if var.is_some() { return None; }
-    let Ok(num) = words.next()?.parse::<usize>() else { return None; };
+fn parse_next_as_usize<'a>(var: &mut Option<usize>, words: &mut impl Iterator<Item = &'a str>) -> bool {
+    if var.is_some() { return false; }
+    let Some(word) = words.next() else { return false; };
+    let Ok(num) = word.parse::<usize>() else { return false; };
     *var = Some(num);
-    Some(())
+    true
 }

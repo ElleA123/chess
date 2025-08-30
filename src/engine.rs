@@ -1,8 +1,9 @@
-pub mod psts;
+use crate::chess::{Board, Color, Move, Piece, PIECES, gen_legal_moves, make_move};
+use crate::uci::{HaltCommand, UciGoOptions, UciResponse};
 
 use std::{collections::HashMap, sync::mpsc, time::Instant};
 
-use crate::{chess::*, uci::{HaltCommand, UciGoOptions}};
+mod psts;
 
 const MAX_DEPTH: usize = 6;
 const MAX_TIME: usize = usize::MAX; // ms
@@ -23,7 +24,6 @@ const fn next_iter_time_guess(depth: usize) -> usize {
 pub struct SearchOptions {
     pub max_depth: usize,
     pub time: usize,
-    // pub search_moves: Option<Vec<Move>>,
     pub nodes: Option<usize>,
 }
 
@@ -71,10 +71,59 @@ pub fn decide_options(board: &mut Board, go_options: &UciGoOptions) -> SearchOpt
     }
 }
 
-pub fn search_infinite(board: &mut Board, search_moves: Option<Vec<Move>>, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Result<Option<Move>, ()> {
-    let mut moves = search_moves.unwrap_or(board.get_legal_moves());
+pub fn search_perft(board: &Board, depth: usize, info_sender: Option<&mpsc::Sender<UciResponse>>) -> usize {
+    if depth == 0 { return 1; }
+
+    let mut count = 0;
+
+    if let Some(info_sender) = info_sender {
+        let mut moves = Vec::new();
+        gen_legal_moves(board, &mut moves);
+
+        for mv in moves {
+            let mut subtotal = 0;
+            perft(&make_move(board, mv), &mut subtotal, depth - 1);
+
+            info_sender.send(UciResponse::Plaintext(format!("{}: {}", mv.uci(), subtotal))).expect("stdout error");
+
+            count += subtotal;
+        }
+    }
+    else {
+        perft(board, &mut count, depth)
+    }
+
+    count
+}
+
+fn perft(board: &Board, count: &mut usize, depth: usize) {
+    if depth == 0 {
+        *count += 1;
+        return;
+    }
+
+    let mut moves = Vec::new();
+    gen_legal_moves(board, &mut moves);
+
+    if depth == 1 {
+        *count += moves.len();
+        return;
+    }
+
+    for mv in moves {
+        perft(&make_move(board, mv), count, depth - 1);
+    }
+}
+
+pub fn search_infinite(board: &Board, search_moves: Option<Vec<Move>>, halt_receiver: &mpsc::Receiver<HaltCommand>) -> Result<Option<Move>, ()> {
+    let mut moves = search_moves.unwrap_or_else(|| {
+        let mut moves = Vec::new();
+        gen_legal_moves(board, &mut moves);
+        moves
+    });
     let mut best_move = None;
     let mut depth = 1;
+
     loop {
         // Check for a halt command
         if let Ok(halt_cmd) = halt_receiver.try_recv() {
@@ -99,15 +148,19 @@ pub fn search_infinite(board: &mut Board, search_moves: Option<Vec<Move>>, halt_
 }
 
 pub fn search(
-    board: &mut Board, options: SearchOptions, search_moves: Option<Vec<Move>>, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
+    board: &Board, options: SearchOptions, search_moves: Option<Vec<Move>>, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
 ) -> Result<Option<Move>, ()> {
     // Search for the best move in a position using [iterative deepening](https://www.chessprogramming.org/Iterative_Deepening)
-    // If `halt_receiver` is `Some`, the search can end early if a `HaltCommand` is sent to the receiver. 
+    // If `halt_receiver` is `Some(rx)`, the search can end early if a `HaltCommand` is sent to the receiver. 
     let start_time = Instant::now();
 
     let SearchOptions { max_depth, time, nodes } = options;
 
-    let mut moves = search_moves.unwrap_or(board.get_legal_moves());
+    let mut moves = search_moves.unwrap_or_else(|| {
+        let mut moves = Vec::new();
+        gen_legal_moves(board, &mut moves);
+        moves
+    });
 
     let mut best_move: Option<Move> = None;
 
@@ -166,7 +219,7 @@ pub fn search(
 }
 
 fn dfs_search_and_sort(
-    board: &mut Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, depth: usize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
+    board: &Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, depth: usize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
 ) -> Result<(), HaltCommand> {
     // Run depth-first search with a max depth of `depth` and sort `moves` from worst to best.
     // The function also updates `best_move` as soon as a better move is discovered; combined with move-sorting from previous iterations,
@@ -181,10 +234,9 @@ fn dfs_search_and_sort(
             if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
         }
 
-        board.make_move(&mv, true);
-        let result = negamax(board, depth - 1, -isize::MAX, isize::MAX, halt_receiver);
-        board.undo_move();
-        let score = -result?;
+        let score = -negamax(
+            &make_move(board, mv), depth - 1, -isize::MAX, isize::MAX, halt_receiver
+        )?;
 
         if score > best_score {
             best_score = score;
@@ -205,22 +257,21 @@ fn dfs_search_and_sort(
 }
 
 fn dfs_search_final(
-    board: &mut Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, max_depth: usize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
+    board: &Board, moves: &mut Vec<Move>, best_move: &mut Option<Move>, max_depth: usize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
 ) -> Result<(), HaltCommand> {
     // Run depth-first search with a max depth of `depth`, utilizing alpha-beta pruning on the provided moves to maximize speed.
     let mut best_score = -isize::MAX;
     let mut alpha = -isize::MAX;
 
-    for mv in moves {
+    for &mut mv in moves {
         // Check for a halt command
         if let Some(halt_receiver) = halt_receiver {
             if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
         }
 
-        board.make_move(&mv, true);
-        let result = negamax(board, max_depth - 1, -isize::MAX, -alpha, halt_receiver);
-        board.undo_move();
-        let score = -result?;
+        let score = -negamax(
+            &make_move(board, mv), max_depth - 1, -isize::MAX, -alpha, halt_receiver
+        )?;
 
         if score > best_score {
             best_score = score;
@@ -239,14 +290,15 @@ fn dfs_search_final(
 }
 
 fn negamax(
-    board: &mut Board, depth: usize, mut alpha: isize, beta: isize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
+    board: &Board, depth: usize, mut alpha: isize, beta: isize, halt_receiver: Option<&mpsc::Receiver<HaltCommand>>
 ) -> Result<isize, HaltCommand> {
     // Recursively find the a position's score using [negamax](https://www.chessprogramming.org/Negamax)
     if depth == 0 {
         return Ok(relative_score(board));
     }
 
-    let moves = board.get_legal_moves();
+    let mut moves = Vec::new();
+    gen_legal_moves(board, &mut moves);
     if moves.len() == 0 {
         return Ok(if board.is_check() {
             -isize::MAX
@@ -262,10 +314,10 @@ fn negamax(
             if let Ok(halt_command) = halt_receiver.try_recv() { return Err(halt_command); }
         }
 
-        board.make_move(&mv, true);
-        let result = negamax(board, depth - 1, -beta, -alpha, halt_receiver);
-        board.undo_move();
-        let score = -result?;
+        let score = -negamax(
+            &make_move(board, mv), depth - 1, -beta, -alpha, halt_receiver
+        )?;
+
         if score > max {
             max = score;
             if score > alpha {
@@ -289,22 +341,24 @@ fn relative_score(board: &Board) -> isize {
 fn score_side(board: &Board, color: Color) -> isize {
     let mut score = 0;
 
-    for coord in board.find_players_pieces(color) {
-        let piece = board.get_square(coord).unwrap();
-        score += MATERIAL_FACTOR * material(piece.piece_type);
-        score += PST_FACTOR * psts::get_mg(piece, coord);
+    for piece in PIECES {
+        let material = material(piece);
+        for square in board.get_piece(piece) & board.get_color(color) {
+            score += MATERIAL_FACTOR * material;
+            score += PST_FACTOR * psts::get_mg(piece, color, square);
+        }
     }
 
     score
 }
 
-const fn material(piece_type: PieceType) -> isize {
-    match piece_type {
-        PieceType::Rook => 5,
-        PieceType::Knight => 3,
-        PieceType::Bishop => 3,
-        PieceType::King => 0,
-        PieceType::Queen => 9,
-        PieceType::Pawn => 1
+const fn material(piece: Piece) -> isize {
+    match piece {
+        Piece::Rook => 5,
+        Piece::Knight => 3,
+        Piece::Bishop => 3,
+        Piece::King => 0,
+        Piece::Queen => 9,
+        Piece::Pawn => 1
     }
 }

@@ -1,57 +1,64 @@
-use std::mem::MaybeUninit;
-
+use crate::chess::{Board, COLORS, NUM_COLORS, NUM_FILES, NUM_PIECES, NUM_SQUARES, PIECES};
 use crate::prng::PRNG;
-use crate::chess::Board;
+
+const NUM_CASTLES: usize = 16;
 
 pub struct ZobristHasher {
-    pieces: [[[u64; 8]; 8]; 12],
+    pieces: [[[u64; NUM_SQUARES]; NUM_PIECES]; NUM_COLORS],
     side_to_move: u64,
-    allowed_castling: [u64; 16],
-    en_passant: [u64; 8],
+    castles: [u64; NUM_CASTLES],
+    en_passant: [u64; NUM_FILES],
 }
 
 impl ZobristHasher {
-    pub fn new(seed: u128) -> Self {
+    pub const fn new(seed: u128) -> Self {
         let mut prng = PRNG::new(seed);
-        let mut pieces = Box::new([[[MaybeUninit::uninit(); 8]; 8]; 12]);
-        for i in 0..12 {
-            for j in 0..8 {
-                for k in 0..8 {
-                    pieces[i][j][k].write(prng.next());
+
+        let mut pieces = [[[0; NUM_SQUARES]; NUM_PIECES]; NUM_COLORS];
+
+        let mut i = 0;
+        while i < NUM_COLORS {
+            let mut j = 0;
+            while j < NUM_PIECES {
+                let mut k = 0;
+                while k < NUM_SQUARES {
+                    pieces[i][j][k] = prng.next();
+                    k += 1;
                 }
+                j += 1;
             }
+            i += 1;
         }
 
         let side_to_move = prng.next();
 
-        let mut allowed_castling = [MaybeUninit::uninit(); 16];
-        for i in 0..16 {
-            allowed_castling[i].write(prng.next());
+        let mut castles = [0; 16];
+
+        let mut i = 0;
+        while i < NUM_CASTLES {
+            castles[i] = prng.next();
+            i += 1;
         }
 
-        let mut en_passant = [MaybeUninit::uninit(); 8];
-        for i in 0..8 {
-            en_passant[i].write(prng.next());
+        let mut en_passant = [0; 8];
+
+        let mut i = 0;
+        while i < NUM_FILES {
+            en_passant[i] = prng.next();
+            i += 1;
         }
 
-        Self {
-            pieces: *(unsafe { std::mem::transmute::<Box<[[[MaybeUninit<u64>; 8]; 8]; 12]>, Box<[[[u64; 8]; 8]; 12]>>(pieces) }),
-            side_to_move,
-            allowed_castling: unsafe { std::mem::transmute(allowed_castling) },
-            en_passant: unsafe { std::mem::transmute(en_passant) }
-        }
+        Self { pieces, side_to_move, castles, en_passant }
     }
 
     pub fn hash(&self, board: &Board) -> u64 {
         let mut hash = 0;
 
         // Pieces
-        let position = board.get_board();
-        for y in 0..8 {
-            for x in 0..8 {
-                if let Some(piece) = position[y][x] {
-                    let p = 6 * piece.color as usize + piece.piece_type as usize;
-                    hash ^= self.pieces[p][y][x];
+        for color in COLORS {
+            for piece in PIECES {
+                for square in board.get_color(color) & board.get_piece(piece) {
+                    hash ^= self.pieces[color.idx()][piece.idx()][square.idx()];
                 }
             }
         }
@@ -62,17 +69,11 @@ impl ZobristHasher {
         }
 
         // Castling
-        let castling = board.get_allowed_castling();
-        let castling_idx =
-            castling.w_k as usize
-            + ((castling.w_q as usize) << 1)
-            + ((castling.b_k as usize) << 2)
-            + ((castling.b_q as usize) << 3);
-        hash ^= self.allowed_castling[castling_idx];
+        hash ^= self.castles[board.get_castles().idx()];
 
         // En passant
         if let Some(c) = board.get_en_passant() {
-            hash ^= self.en_passant[c.x];
+            hash ^= self.en_passant[c.file().idx()];
         } 
 
         hash

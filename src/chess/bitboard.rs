@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not};
 
-use crate::bchess::square::Square;
+use super::square::Square;
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -9,13 +9,14 @@ pub struct Bitboard(pub u64);
 impl Bitboard {
     pub const EMPTY: Bitboard = Bitboard(0);
 
+    #[inline]
     pub const fn from_square(square: Square) -> Self {
         Self(1 << square.idx())
     }
 
-    pub fn to_square(self) -> Square {
-        assert_ne!(self, Bitboard::EMPTY);
-        Square::from_idx(self.0.trailing_zeros() as u8)
+    #[inline]
+    pub const fn to_square(self) -> Square {
+        Square::from_idx(self.0.trailing_zeros() as usize)
     }
 }
 
@@ -72,7 +73,7 @@ impl Iterator for Bitboard {
             return None;
         }
 
-        let square = Square::from_idx(self.0.trailing_zeros() as u8);
+        let square = Square::from_idx(self.0.trailing_zeros() as usize);
         self.0 ^= 1 << self.0.trailing_zeros();
         Some(square)
     }
