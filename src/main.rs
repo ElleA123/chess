@@ -4,20 +4,21 @@ mod prng;
 mod uci;
 mod zobrist;
 
-use crate::chess::Board;
+use crate::chess::{make_move, Board};
 use crate::engine::SearchOptions;
 use crate::zobrist::ZobristHasher;
 use crate::uci::run_uci_mode;
 
 use std::time::Instant;
 
+// fn play_vs_self(board: Option<Board>, options: SearchOptions) {
+//     let mut board = board.unwrap_or_else(|| Board::default());
 
-// fn play_vs_self(board: &mut Board, options: &SearchOptions) {
 //     while board.is_live() {
-//         match engine::search(board, options.clone(), None, None).expect("No halts = no Err") {
+//         match engine::search(board, options, None, None).expect("No halts = no Err") {
 //             Some(mv) => {
 //                 println!("{}", mv.uci());
-//                 board.make_move(&mv, false);
+//                 board = make_move(&board, mv);
 //                 println!("{}", board);
 //                 println!("{}", board.get_fen());
 //             },
@@ -35,6 +36,7 @@ use std::time::Instant;
 //         BoardState::InsufficientMaterial => println!("insufficient material"),
 //         BoardState::Live => unreachable!()
 //     };
+
 //     println!("{}", board.get_fen());
 // }
 

@@ -148,7 +148,7 @@ impl Board {
             _ => return None
         };
 
-        // Castling avilability - TODO: add error handling
+        // Castling avilability
         let mut castles = Castles::NONE;
         if allowed_castling.contains("K") { castles.set(Castle::WK); }
         if allowed_castling.contains("Q") { castles.set(Castle::WQ); }

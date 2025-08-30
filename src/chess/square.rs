@@ -12,7 +12,6 @@ pub const FILES: [File; NUM_FILES] = [
 impl File {
     #[inline]
     pub const fn from_u8(n: u8) -> Self {
-        assert!(n < 8);
         match n {
             0 => File::A,
             1 => File::B,
@@ -28,7 +27,6 @@ impl File {
 
     #[inline]
     pub const fn from_ascii(b: u8) -> Self {
-        assert!(b >= b'a' && b <= b'h');
         Self::from_u8(b - b'a')
     }
 
@@ -78,7 +76,6 @@ pub const RANKS: [Rank; NUM_RANKS] = [
 impl Rank {
     #[inline]
     pub const fn from_u8(n: u8) -> Self {
-        assert!(n < 8);
         match n {
             0 => Rank::One,
             1 => Rank::Two,
@@ -94,7 +91,6 @@ impl Rank {
 
     #[inline]
     pub const fn from_ascii(b: u8) -> Self {
-        assert!(b >= b'1' && b <= b'8');
         Self::from_u8(b - b'1')
     }
 
